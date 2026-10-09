@@ -42,6 +42,40 @@ describe('POST /api/ai/help', () => {
     expect(secondPrompt).toContain('[policy-2] Review workflow:');
   });
 
+  it('sends deduplicated, validated citations: repeats collapse and hallucinated ids are dropped', async () => {
+    const { app } = buildTestApp({
+      script: textScript('Steps [policy-2]. Safety first [policy-3]. Again [policy-2]. ', 'Also [policy-9] and [policy-3].'),
+    });
+
+    const events = eventsOf(await ask(app, 'What is the procedure for reviewing safety equipment?'));
+
+    // Inline text is streamed unchanged; only the done event carries the validated list.
+    expect(deltaText(events)).toContain('[policy-9]');
+    expect(find(events, 'done')).toEqual({ source: 'ai', citedSources: ['policy-2', 'policy-3'] });
+  });
+
+  it('reports an empty citation list when the answer cites nothing', async () => {
+    const { app } = buildTestApp({ script: textScript("The approval policy doesn't cover that.") });
+
+    const events = eventsOf(await ask(app, 'What is on the cafeteria menu?'));
+
+    expect(find(events, 'meta')!.sources).toEqual([]);
+    expect(find(events, 'done')).toEqual({ source: 'ai', citedSources: [] });
+  });
+
+  it('never gives one session the history of another', async () => {
+    const { app, provider } = buildTestApp({ script: textScript('Escalate it [policy-3].') });
+
+    await request(app).post('/api/ai/help').send({ sessionId: 'help-session-a1', message: 'Unsure about a safety item?' });
+    await request(app).post('/api/ai/help').send({ sessionId: 'help-session-b2', message: 'What video resolution is required?' });
+
+    const second = provider!.calls[1]!.messages;
+    expect(second.map((m) => m.role)).toEqual(['system', 'user']);
+    expect(JSON.stringify(second)).not.toContain('Unsure about a safety item?');
+    // Nothing was cited in session B, so no section is carried over from session A.
+    expect(second[0]!.content).not.toContain('Cited earlier in this conversation:');
+  });
+
   it('falls back to the retrieved policy text when the AI times out', async () => {
     const { app } = buildTestApp({ script: { kind: 'hang' }, timeoutMs: 50 });
 
@@ -49,6 +83,7 @@ describe('POST /api/ai/help', () => {
 
     const result = find(events, 'result') as { text: string };
     expect(result.text).toContain('[policy-3]');
-    expect(find(events, 'done')).toEqual({ source: 'fallback', fallbackReason: 'timeout' });
+    // The fallback quotes a real retrieved section, so its citation is validated and sent too.
+    expect(find(events, 'done')).toEqual({ source: 'fallback', fallbackReason: 'timeout', citedSources: ['policy-3'] });
   });
 });

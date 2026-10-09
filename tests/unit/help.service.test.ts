@@ -1,4 +1,4 @@
-import { HELP_PROMPT, HELP_PROMPT_V1, HELP_PROMPT_V2 } from '../../src/prompts/help.prompt';
+import { HELP_PROMPT, HELP_PROMPT_V1, HELP_PROMPT_V2, HELP_PROMPT_V3 } from '../../src/prompts/help.prompt';
 import { InMemoryConversationRepository } from '../../src/repositories/conversation.repository';
 import { createHelpService } from '../../src/services/ai/help.service';
 import { LlmService } from '../../src/services/ai/openai.service';
@@ -32,9 +32,22 @@ function setup(reply = 'Check them first [policy-3].') {
 }
 
 describe('help prompt', () => {
-  it('is versioned; V2 is active', () => {
+  it('is versioned; V3 is active and earlier versions stay exported', () => {
     expect(HELP_PROMPT_V1.version).toBe(1);
-    expect(HELP_PROMPT).toBe(HELP_PROMPT_V2);
+    expect(HELP_PROMPT_V2.version).toBe(2);
+    expect(HELP_PROMPT).toBe(HELP_PROMPT_V3);
+  });
+
+  it('V3 forbids claiming earlier statements that are not in the conversation', () => {
+    const policy = loadPolicyChunks();
+    const system = HELP_PROMPT_V3.build({ index: policy, retrieved: [], carried: [], history: [], message: 'x' })[0]!
+      .content;
+
+    expect(system).toMatch(/only refer to your earlier answers as they appear in the messages above/i);
+    expect(system).toMatch(/never claim you said something that is not there/i);
+    // V2's guarantees are kept.
+    expect(system).toMatch(/never say that a listed section does not exist/i);
+    expect(system).toMatch(/not retrieved for this question/i);
   });
 
   it('V2 lists every policy section and separates "not included" from "does not exist"', () => {

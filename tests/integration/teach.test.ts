@@ -23,6 +23,10 @@ describe('POST /api/ai/teach', () => {
     const events = eventsOf(await ask(app, 'Teach me how to review an approval.'));
 
     expect((find(events, 'result') as { text: string }).text).toContain('1. Open the item');
-    expect(find(events, 'done')).toEqual({ source: 'fallback', fallbackReason: 'provider_error' });
+    expect(find(events, 'done')).toEqual({
+      source: 'fallback',
+      fallbackReason: 'provider_error',
+      citedSources: ['policy-2'],
+    });
   });
 });
