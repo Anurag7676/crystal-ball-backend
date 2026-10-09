@@ -7,9 +7,10 @@ import { createGreetingService } from '../services/ai/greeting.service';
 import { createHelpService } from '../services/ai/help.service';
 import type { LlmService } from '../services/ai/openai.service';
 import { createSummaryService } from '../services/ai/summary.service';
+import { createTeachService } from '../services/ai/teach.service';
 import type { PolicyChunk } from '../services/rag/policy.service';
 import type { Logger } from '../utils/logger';
-import { streamStructured, streamText } from '../utils/streaming';
+import { streamStructured, streamText, type TextStreamPlan } from '../utils/streaming';
 
 export interface AiControllerDeps {
   approvals: ApprovalRepository;
@@ -19,10 +20,6 @@ export interface AiControllerDeps {
   logger: Logger;
 }
 
-const notImplemented: RequestHandler = (_req, res) => {
-  res.status(501).json({ error: { code: 'internal_error', message: 'Not implemented yet' } });
-};
-
 /** Controllers stay thin: the body is already Zod-validated; services decide what to send the model. */
 export function createAiController(deps: AiControllerDeps): Record<AiAction, RequestHandler> {
   const { logger } = deps;
@@ -30,12 +27,20 @@ export function createAiController(deps: AiControllerDeps): Record<AiAction, Req
   const summary = createSummaryService(deps);
   const chat = createChatService(deps);
   const help = createHelpService(deps);
+  const teach = createTeachService(deps);
+
+  const textHandler =
+    <B>(action: AiAction, prepare: (body: B) => Promise<TextStreamPlan>): RequestHandler =>
+    async (req, res) => {
+      const plan = await prepare(req.body as B);
+      await streamText(res, { action, plan, logger });
+    };
 
   return {
-    greeting: async (req, res) => {
-      const plan = await greeting.prepare(req.body as GreetingRequest);
-      await streamText(res, { action: 'greeting', plan, logger });
-    },
+    greeting: textHandler<GreetingRequest>('greeting', greeting.prepare),
+    chat: textHandler<MessageRequest>('chat', chat.prepare),
+    help: textHandler<MessageRequest>('help', help.prepare),
+    teach: textHandler<MessageRequest>('teach', teach.prepare),
     summary: async (req, res) => {
       await streamStructured(res, {
         action: 'summary',
@@ -46,14 +51,5 @@ export function createAiController(deps: AiControllerDeps): Record<AiAction, Req
         },
       });
     },
-    chat: async (req, res) => {
-      const plan = await chat.prepare(req.body as MessageRequest);
-      await streamText(res, { action: 'chat', plan, logger });
-    },
-    help: async (req, res) => {
-      const plan = await help.prepare(req.body as MessageRequest);
-      await streamText(res, { action: 'help', plan, logger });
-    },
-    teach: notImplemented,
   };
 }

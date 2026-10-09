@@ -79,6 +79,23 @@ export function helpFallback(chunks: PolicyChunk[]): string {
   );
 }
 
+/**
+ * Teach fallback: the numbered review steps, quoted from the policy chunk that defines them.
+ * Returns null when the policy has no "Step N:" section — we don't improvise a curriculum.
+ */
+export function teachFallback(policy: PolicyChunk[]): string | null {
+  const workflow = policy.find((c) => /Step 1:/.test(c.text));
+  if (!workflow) return null;
+  const steps = workflow.text
+    .split(/Step \d+:\s*/)
+    .slice(1)
+    .map((s, i) => `${i + 1}. ${s.trim().split(/(?<=\.)\s/)[0]}`);
+  return [
+    `The AI tutor is unavailable right now, so here are the review steps from the approval policy [${workflow.id}]:`,
+    ...steps,
+  ].join('\n');
+}
+
 export function summaryFallback(approvals: Approval[]): Summary {
   const pending = approvals.filter((a) => a.status === 'pending_review');
   const ordered = [...pending.filter(isSafetyRelated), ...pending.filter((a) => !isSafetyRelated(a))];
