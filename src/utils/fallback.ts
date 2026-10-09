@@ -21,6 +21,51 @@ export const isSafetyRelated = (approval: Approval) => SAFETY_PATTERN.test(appro
 
 const TYPE_NAMES: Record<Approval['type'], string> = { folder: 'folder', video: 'video', pdf: 'PDF', image: 'image' };
 
+const TYPE_LABELS: Record<Approval['type'], string> = { folder: 'Folder', video: 'Video', pdf: 'PDF', image: 'Image' };
+const IGNORED_WORDS = new Set(['submitted', 'submit', 'uploaded', 'approval', 'approvals', 'which', 'what', 'item', 'items']);
+
+const significantWords = (text: string) =>
+  new Set(
+    text
+      .toLowerCase()
+      .split(/[^a-z0-9°]+/)
+      .filter((w) => w.length >= 4 && !IGNORED_WORDS.has(w)),
+  );
+
+/**
+ * Chat fallback: answers only questions the dataset answers exactly. Returns null otherwise so
+ * the client shows a retryable error instead of a guessed answer.
+ */
+export function chatFallback(message: string, approvals: Approval[]): string | null {
+  const pending = approvals.filter((a) => a.status === 'pending_review');
+  const text = message.toLowerCase();
+
+  if (/\b(how many|count|number of)\b/.test(text)) {
+    const n = pending.length;
+    return `There ${n === 1 ? 'is' : 'are'} ${n} approval${n === 1 ? '' : 's'} pending review.`;
+  }
+
+  if (/\bwho\b/.test(text) && /\b(submit|submitted|sent|upload|uploaded|created)\b/.test(text)) {
+    const words = significantWords(text);
+    const matches = pending.filter((a) => [...significantWords(a.title)].some((w) => words.has(w)));
+    if (matches.length !== 1) return null;
+    const [item] = matches as [Approval];
+    return `"${item.title}" was submitted by ${item.submittedBy} on ${item.submittedDateLabel}.`;
+  }
+
+  if (/\b(list|show)\b/.test(text)) {
+    if (pending.length === 0) return 'There are no approvals pending review.';
+    return [
+      'The pending approvals are:',
+      ...pending.map(
+        (a, i) => `${i + 1}. ${a.title} (${TYPE_LABELS[a.type]}, submitted by ${a.submittedBy} on ${a.submittedDateLabel})`,
+      ),
+    ].join('\n');
+  }
+
+  return null;
+}
+
 export function summaryFallback(approvals: Approval[]): Summary {
   const pending = approvals.filter((a) => a.status === 'pending_review');
   const ordered = [...pending.filter(isSafetyRelated), ...pending.filter((a) => !isSafetyRelated(a))];

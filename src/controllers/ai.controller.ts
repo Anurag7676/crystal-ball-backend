@@ -1,7 +1,8 @@
 import type { RequestHandler } from 'express';
 import type { ApprovalRepository } from '../repositories/approval.repository';
 import type { ConversationRepository } from '../repositories/conversation.repository';
-import type { AiAction, GreetingRequest, SummaryRequest } from '../schemas/ai.schema';
+import type { AiAction, GreetingRequest, MessageRequest, SummaryRequest } from '../schemas/ai.schema';
+import { createChatService } from '../services/ai/chat.service';
 import { createGreetingService } from '../services/ai/greeting.service';
 import type { LlmService } from '../services/ai/openai.service';
 import { createSummaryService } from '../services/ai/summary.service';
@@ -26,6 +27,7 @@ export function createAiController(deps: AiControllerDeps): Record<AiAction, Req
   const { logger } = deps;
   const greeting = createGreetingService(deps);
   const summary = createSummaryService(deps);
+  const chat = createChatService(deps);
 
   return {
     greeting: async (req, res) => {
@@ -42,7 +44,10 @@ export function createAiController(deps: AiControllerDeps): Record<AiAction, Req
         },
       });
     },
-    chat: notImplemented,
+    chat: async (req, res) => {
+      const plan = await chat.prepare(req.body as MessageRequest);
+      await streamText(res, { action: 'chat', plan, logger });
+    },
     help: notImplemented,
     teach: notImplemented,
   };
