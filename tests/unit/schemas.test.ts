@@ -62,6 +62,10 @@ describe('summary model output contract', () => {
     expect(SummaryModelOutputSchema.safeParse(valid).success).toBe(true);
   });
 
+  it('accepts a summary with no recommendations (tips are optional; ordering is not)', () => {
+    expect(SummaryModelOutputSchema.safeParse({ ...valid, recommendations: [] }).success).toBe(true);
+  });
+
   it.each([
     ['missing overview', { ...valid, overview: undefined }],
     ['non-integer count', { ...valid, pendingCount: 3.5 }],

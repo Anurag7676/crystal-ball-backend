@@ -16,6 +16,8 @@ export interface SummaryResult {
   summary: Summary;
   source: 'ai' | 'fallback';
   fallbackReason?: FallbackReason;
+  /** Why the AI output was rejected — for server logs only, never sent to the client. */
+  fallbackDetail?: string;
 }
 
 /**
@@ -44,7 +46,10 @@ function parseModelJson(raw: string): SummaryModelOutput {
     throw new LlmError('invalid_output', 'Model output is not valid JSON');
   }
   const parsed = SummaryModelOutputSchema.safeParse(json);
-  if (!parsed.success) throw new LlmError('invalid_output', 'Model output does not match the summary schema');
+  if (!parsed.success) {
+    const issues = parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ');
+    throw new LlmError('invalid_output', `Model output does not match the summary schema (${issues})`);
+  }
   return parsed.data;
 }
 
@@ -91,7 +96,12 @@ export function createSummaryService({ approvals, llm }: { approvals: ApprovalRe
       } catch (err) {
         const llmError = err instanceof LlmError ? err : new LlmError('provider_error', 'Unexpected failure');
         if (llmError.reason === 'cancelled') throw llmError;
-        return { source: 'fallback', fallbackReason: llmError.reason, summary: summaryFallback(all) };
+        return {
+          source: 'fallback',
+          fallbackReason: llmError.reason,
+          fallbackDetail: llmError.message,
+          summary: summaryFallback(all),
+        };
       }
     },
   };

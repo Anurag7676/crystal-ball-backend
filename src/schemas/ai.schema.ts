@@ -52,7 +52,8 @@ export const SummaryModelOutputSchema = z
       .array(z.object({ approvalId: z.string().min(1), reason: z.string().min(1).max(400) }).strict())
       .min(1)
       .max(10),
-    recommendations: z.array(z.string().min(1).max(400)).min(1).max(5),
+    // Optional tips: an empty list is a weaker summary, not an untrustworthy one.
+    recommendations: z.array(z.string().min(1).max(400)).max(5),
   })
   .strict();
 

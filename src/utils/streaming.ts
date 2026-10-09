@@ -125,6 +125,8 @@ export async function streamStructured(
       result: SseEventPayload<'result'>;
       source: 'ai' | 'fallback';
       fallbackReason?: FallbackReason;
+      /** Server-log-only explanation of why the AI output was rejected. */
+      fallbackDetail?: string;
     }>;
   },
 ): Promise<void> {
@@ -133,8 +135,10 @@ export async function streamStructured(
   sse.open();
   sse.send('meta', { action, requestId: randomUUID() });
   try {
-    const { result, source, fallbackReason } = await run(cancel.signal);
-    if (source === 'fallback') logger.warn('AI call failed, using fallback', { action, reason: fallbackReason });
+    const { result, source, fallbackReason, fallbackDetail } = await run(cancel.signal);
+    if (source === 'fallback') {
+      logger.warn('AI call failed, using fallback', { action, reason: fallbackReason, detail: fallbackDetail });
+    }
     sse.send('result', result);
     sse.send('done', { source, ...(fallbackReason ? { fallbackReason } : {}) });
   } catch (err) {

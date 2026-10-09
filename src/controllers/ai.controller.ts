@@ -46,8 +46,8 @@ export function createAiController(deps: AiControllerDeps): Record<AiAction, Req
         action: 'summary',
         logger,
         run: async (signal) => {
-          const { summary: data, source, fallbackReason } = await summary.generate(req.body as SummaryRequest, signal);
-          return { result: { kind: 'summary', summary: data }, source, fallbackReason };
+          const { summary: data, ...outcome } = await summary.generate(req.body as SummaryRequest, signal);
+          return { result: { kind: 'summary', summary: data }, ...outcome };
         },
       });
     },
