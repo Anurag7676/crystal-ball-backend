@@ -38,4 +38,17 @@ export const CHAT_PROMPT_V1: PromptDefinition<ChatContext> = {
   ],
 };
 
-export const CHAT_PROMPT = CHAT_PROMPT_V1;
+/** V2: identical rules plus an explicit plain-text format — the UI renders text, not markdown. */
+export const CHAT_PROMPT_V2: PromptDefinition<ChatContext> = {
+  ...CHAT_PROMPT_V1,
+  version: 2,
+  build: (ctx) => {
+    const [system, ...rest] = CHAT_PROMPT_V1.build(ctx);
+    const formatRule =
+      'Format: plain text only — no markdown (no **bold**, headings, tables or code blocks). ' +
+      'Use "1." style numbered lines for lists.';
+    return [{ role: 'system', content: `${system!.content}\n\n${formatRule}` }, ...rest];
+  },
+};
+
+export const CHAT_PROMPT = CHAT_PROMPT_V2;
