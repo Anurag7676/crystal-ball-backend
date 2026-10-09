@@ -1,4 +1,4 @@
-import { SUMMARY_PROMPT, SUMMARY_PROMPT_V1 } from '../../src/prompts/summary.prompt';
+import { SUMMARY_PROMPT, SUMMARY_PROMPT_V1, SUMMARY_PROMPT_V2 } from '../../src/prompts/summary.prompt';
 import { FixtureApprovalRepository } from '../../src/repositories/approval.repository';
 import { SummarySchema } from '../../src/schemas/ai.schema';
 import { LlmService } from '../../src/services/ai/openai.service';
@@ -26,9 +26,17 @@ function setup(script: FakeScript | null, timeoutMs?: number) {
 }
 
 describe('summary prompt', () => {
-  it('is versioned and asks for JSON only', () => {
-    expect(SUMMARY_PROMPT).toBe(SUMMARY_PROMPT_V1);
+  it('is versioned; V1 stays exported while V2 is active', () => {
     expect(SUMMARY_PROMPT_V1.version).toBe(1);
+    expect(SUMMARY_PROMPT).toBe(SUMMARY_PROMPT_V2);
+    expect(SUMMARY_PROMPT_V2.version).toBe(2);
+  });
+
+  it('V2 bounds the length of every generated field (keeps the call inside the 8s budget)', () => {
+    const system = SUMMARY_PROMPT_V2.build({ pendingCount: 0, pending: [] })[0]!.content;
+    expect(system).toMatch(/at most 20 words/);
+    expect(system).toMatch(/1–2 recommendations/);
+    expect(SUMMARY_PROMPT_V2.maxTokens).toBeLessThan(SUMMARY_PROMPT_V1.maxTokens);
   });
 });
 

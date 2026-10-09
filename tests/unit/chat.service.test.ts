@@ -1,4 +1,4 @@
-import { CHAT_PROMPT, CHAT_PROMPT_V1 } from '../../src/prompts/chat.prompt';
+import { CHAT_PROMPT, CHAT_PROMPT_V1, CHAT_PROMPT_V2 } from '../../src/prompts/chat.prompt';
 import { FixtureApprovalRepository } from '../../src/repositories/approval.repository';
 import {
   type ConversationRepository,
@@ -31,8 +31,11 @@ function setup(conversations: ConversationRepository = new InMemoryConversationR
 }
 
 describe('chat prompt', () => {
-  it('is versioned', () => {
-    expect(CHAT_PROMPT).toBe(CHAT_PROMPT_V1);
+  it('is versioned; V2 is active and forbids markdown the UI would show as raw symbols', () => {
+    expect(CHAT_PROMPT_V1.version).toBe(1);
+    expect(CHAT_PROMPT).toBe(CHAT_PROMPT_V2);
+    const system = CHAT_PROMPT_V2.build({ pending: [], history: [], message: 'hi' })[0]!.content;
+    expect(system).toMatch(/no markdown/i);
   });
 });
 
