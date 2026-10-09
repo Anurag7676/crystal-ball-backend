@@ -1,6 +1,17 @@
-import type { RequestHandler } from 'express';
-import type { ZodType } from 'zod';
+import type { RequestHandler, Response } from 'express';
+import type { ZodError, ZodType } from 'zod';
 import type { ErrorResponse } from '../schemas/ai.schema';
+
+function rejectInvalid(res: Response, error: ZodError, what: string, root: string) {
+  const body: ErrorResponse = {
+    error: {
+      code: 'validation_error',
+      message: `${what} is invalid`,
+      details: error.issues.map((issue) => ({ path: issue.path.join('.') || root, message: issue.message })),
+    },
+  };
+  res.status(400).json(body);
+}
 
 /**
  * Validates `req.body` against a Zod schema and replaces it with the parsed (trimmed, typed)
@@ -10,20 +21,20 @@ export const validateBody =
   (schema: ZodType): RequestHandler =>
   (req, res, next) => {
     const parsed = schema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      const body: ErrorResponse = {
-        error: {
-          code: 'validation_error',
-          message: 'Request body is invalid',
-          details: parsed.error.issues.map((issue) => ({
-            path: issue.path.join('.') || '(body)',
-            message: issue.message,
-          })),
-        },
-      };
-      res.status(400).json(body);
-      return;
-    }
+    if (!parsed.success) return rejectInvalid(res, parsed.error, 'Request body', '(body)');
     req.body = parsed.data;
+    next();
+  };
+
+/**
+ * Validates the query string. Express 5 exposes `req.query` read-only, so the parsed value is
+ * stored on `res.locals.query` for the controller.
+ */
+export const validateQuery =
+  (schema: ZodType): RequestHandler =>
+  (req, res, next) => {
+    const parsed = schema.safeParse(req.query);
+    if (!parsed.success) return rejectInvalid(res, parsed.error, 'Query string', '(query)');
+    res.locals.query = parsed.data;
     next();
   };

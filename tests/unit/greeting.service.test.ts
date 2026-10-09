@@ -1,13 +1,18 @@
 import { GREETING_PROMPT, GREETING_PROMPT_V1 } from '../../src/prompts/greeting.prompt';
 import type { ApprovalRepository } from '../../src/repositories/approval.repository';
 import { FixtureApprovalRepository } from '../../src/repositories/approval.repository';
+import { queryInMemory } from '../../src/repositories/approvalQuery';
 import type { Approval } from '../../src/schemas/approval.schema';
 import { createGreetingService } from '../../src/services/ai/greeting.service';
 import { LlmService } from '../../src/services/ai/openai.service';
 import { greetingFallback } from '../../src/utils/fallback';
 import { FakeProvider, textScript } from '../helpers/fakes';
 
-const repoOf = (approvals: Approval[]): ApprovalRepository => ({ source: 'fixture', list: async () => approvals });
+const repoOf = (approvals: Approval[]): ApprovalRepository => ({
+  source: 'fixture',
+  list: async () => approvals,
+  query: async (query) => queryInMemory(approvals, query),
+});
 
 async function drain(stream: AsyncIterable<string>) {
   let text = '';
