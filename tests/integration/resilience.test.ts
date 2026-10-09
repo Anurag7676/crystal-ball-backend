@@ -48,7 +48,8 @@ describe('missing OPENAI_API_KEY', () => {
     const events = eventsOf(res);
 
     expect(names(events)).toEqual(['meta', 'result', 'done']);
-    expect(find(events, 'done')).toEqual({ source: 'fallback', fallbackReason: 'missing_api_key' });
+    // Help/Teach fallbacks also carry validated citations for the sections they quote.
+    expect(find(events, 'done')).toMatchObject({ source: 'fallback', fallbackReason: 'missing_api_key' });
   });
 
   it('reports the degraded mode on the health endpoint', async () => {

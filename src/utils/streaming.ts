@@ -98,7 +98,9 @@ export async function streamText(
     const fallback = plan.fallback();
     if (fallback) {
       sse.send('result', { kind: 'text', text: fallback });
-      sse.send('done', { source: 'fallback', fallbackReason: reason });
+      // Fallbacks quote real sections, so their citations go through the same validation.
+      const cited = plan.citedSources?.(fallback);
+      sse.send('done', { source: 'fallback', fallbackReason: reason, ...(cited ? { citedSources: cited } : {}) });
       await persist(plan, fallback, 'fallback', logger);
     } else {
       sse.send('error', { code: 'ai_unavailable', message: UNAVAILABLE_MESSAGES[reason], retryable: true });

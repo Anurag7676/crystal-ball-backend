@@ -106,4 +106,20 @@ export const HELP_PROMPT_V2: PromptDefinition<HelpContextV2> = {
   ],
 };
 
-export const HELP_PROMPT = HELP_PROMPT_V2;
+/**
+ * V3: V2 plus a rule against misquoting the conversation — the model had claimed it "said earlier"
+ * things that were not in the visible conversation.
+ */
+export const HELP_PROMPT_V3: PromptDefinition<HelpContextV2> = {
+  ...HELP_PROMPT_V2,
+  version: 3,
+  build: (ctx) => {
+    const [system, ...rest] = HELP_PROMPT_V2.build(ctx);
+    const historyRule =
+      'Only refer to your earlier answers as they appear in the messages above. Never claim you said something ' +
+      'that is not there, and do not describe or correct earlier answers unless the operator asks about them.';
+    return [{ role: 'system', content: `${system!.content}\n\n${historyRule}` }, ...rest];
+  },
+};
+
+export const HELP_PROMPT = HELP_PROMPT_V3;
