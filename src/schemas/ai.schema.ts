@@ -58,6 +58,9 @@ export const SummaryModelOutputSchema = z
 
 export type SummaryModelOutput = z.infer<typeof SummaryModelOutputSchema>;
 
+/** Same contract as JSON Schema, for providers that constrain decoding to a schema. */
+export const SUMMARY_OUTPUT_JSON_SCHEMA = z.toJSONSchema(SummaryModelOutputSchema) as Record<string, unknown>;
+
 /** What the API sends to the UI: model output + server-side facts (titles, ordering note). */
 export const SummarySchema = z.object({
   pendingCount: z.number().int().nonnegative(),

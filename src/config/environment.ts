@@ -7,6 +7,10 @@ const EnvSchema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
   FRONTEND_URL: z.url().default('http://localhost:3000'),
   MONGODB_URI: z.preprocess(emptyToUndefined, z.string().optional()),
+  /** Optional override; by default Claude is used when ANTHROPIC_API_KEY is set, else OpenAI. */
+  AI_PROVIDER: z.preprocess(emptyToUndefined, z.enum(['anthropic', 'openai']).optional()),
+  ANTHROPIC_API_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+  ANTHROPIC_MODEL: z.preprocess(emptyToUndefined, z.string().default('claude-opus-5-5')),
   OPENAI_API_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
   OPENAI_MODEL: z.preprocess(emptyToUndefined, z.string().default('gpt-4o')),
   /** Assignment requirement: every LLM call times out after 8 seconds. */

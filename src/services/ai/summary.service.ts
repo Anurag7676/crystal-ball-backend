@@ -4,6 +4,7 @@ import {
   type FallbackReason,
   type Summary,
   type SummaryModelOutput,
+  SUMMARY_OUTPUT_JSON_SCHEMA,
   SummaryModelOutputSchema,
   type SummaryRequest,
 } from '../../schemas/ai.schema';
@@ -65,6 +66,7 @@ export function createSummaryService({ approvals, llm }: { approvals: ApprovalRe
           maxTokens: prompt.maxTokens,
           temperature: prompt.temperature,
           json: true,
+          jsonSchema: SUMMARY_OUTPUT_JSON_SCHEMA,
           signal,
         });
         const output = parseModelJson(raw);

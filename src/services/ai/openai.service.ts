@@ -10,8 +10,10 @@ export interface ProviderRequest {
   messages: ChatMessage[];
   maxTokens: number;
   temperature: number;
-  /** Ask the model for a JSON object (OpenAI JSON mode). */
+  /** Ask the model for a JSON object. */
   json?: boolean;
+  /** JSON Schema for providers that support schema-constrained output (Claude structured outputs). */
+  jsonSchema?: Record<string, unknown>;
 }
 
 /** Thin seam over the vendor SDK so services and tests never touch OpenAI directly. */
@@ -203,7 +205,9 @@ class CallGuard {
     if (err instanceof LlmError) return err;
     if (this.timedOut) return new LlmError('timeout', 'The AI provider did not respond in time');
     if (this.external?.aborted) return new LlmError('cancelled', 'Request cancelled');
-    if (err instanceof APIError && err.status === 401) {
+    // Both vendor SDKs expose the HTTP status on their APIError classes.
+    const status = err instanceof APIError ? err.status : (err as { status?: unknown } | null)?.status;
+    if (status === 401 || status === 403) {
       return new LlmError('provider_error', 'The AI provider rejected the API key');
     }
     return new LlmError('provider_error', 'The AI provider request failed');
