@@ -108,6 +108,47 @@ export async function streamText(
   }
 }
 
+/**
+ * For structured output: nothing is streamed until the whole model response has been parsed and
+ * verified, then exactly one `result` is sent. Partial JSON never reaches the client.
+ */
+export async function streamStructured(
+  res: Response,
+  {
+    action,
+    logger,
+    run,
+  }: {
+    action: AiAction;
+    logger: Logger;
+    run: (signal: AbortSignal) => Promise<{
+      result: SseEventPayload<'result'>;
+      source: 'ai' | 'fallback';
+      fallbackReason?: FallbackReason;
+    }>;
+  },
+): Promise<void> {
+  const sse = new SseStream(res);
+  const cancel = abortOnDisconnect(res);
+  sse.open();
+  sse.send('meta', { action, requestId: randomUUID() });
+  try {
+    const { result, source, fallbackReason } = await run(cancel.signal);
+    if (source === 'fallback') logger.warn('AI call failed, using fallback', { action, reason: fallbackReason });
+    sse.send('result', result);
+    sse.send('done', { source, ...(fallbackReason ? { fallbackReason } : {}) });
+  } catch (err) {
+    if (err instanceof LlmError && err.reason === 'cancelled') return;
+    logger.error('Unexpected error in structured AI action', {
+      action,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    sse.send('error', { code: 'internal_error', message: 'Something went wrong. Please try again.', retryable: true });
+  } finally {
+    sse.end();
+  }
+}
+
 async function persist(plan: TextStreamPlan, reply: string, source: 'ai' | 'fallback', logger: Logger) {
   try {
     await plan.onComplete?.(reply, source);
