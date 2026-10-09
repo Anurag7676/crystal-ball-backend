@@ -181,7 +181,13 @@ Only user and assistant turns are stored; system prompts and credentials never a
 4. Stream the answer, which cites `[policy-N]`.
 5. Verify the citations against the retrieved ids.
 
-A purely referential follow-up such as "and what about that?" reuses the previous question's terms for retrieval. There are no embeddings and no vector database: with 4 chunks, keyword/IDF retrieval is transparent, deterministic and unit-testable.
+A purely referential follow-up such as "and what about that?" reuses the previous question's terms for retrieval.
+
+Multi-turn consistency (`HELP_PROMPT_V2`):
+- Sections cited in earlier answers are re-included for follow-ups, up to 4 sections per request. A follow-up whose own retrieval misses them can still see and cite them.
+- The prompt lists every section ID, so the model can say "not retrieved for this question" but can never claim a section doesn't exist.
+- Replies are saved to history with any out-of-context citations removed.
+- The fallback quotes only sections retrieved for the current question. There are no embeddings and no vector database: with 4 chunks, keyword/IDF retrieval is transparent, deterministic and unit-testable.
 
 ### Timeouts and fallbacks
 

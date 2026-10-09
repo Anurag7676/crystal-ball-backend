@@ -42,6 +42,11 @@ export function verifyCitations(text: string, retrievedIds: string[]): { valid: 
   };
 }
 
+/** Removes citations to ids outside `allowedIds`, so they can't be replayed in later turns. */
+export function stripUnverifiedCitations(text: string, allowedIds: string[]): string {
+  return text.replace(/ ?\[(policy-\d+)\]/g, (match, id: string) => (allowedIds.includes(id) ? match : ''));
+}
+
 let cached: PolicyChunk[] | undefined;
 
 export function loadPolicyChunks(): PolicyChunk[] {

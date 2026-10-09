@@ -4,10 +4,13 @@ import type { MessageRequest } from '../../schemas/ai.schema';
 import { helpFallback } from '../../utils/fallback';
 import type { Logger } from '../../utils/logger';
 import type { TextStreamPlan } from '../../utils/streaming';
-import { type PolicyChunk, verifyCitations } from '../rag/policy.service';
+import { type PolicyChunk, stripUnverifiedCitations, verifyCitations } from '../rag/policy.service';
 import { retrieve, tokenize } from '../rag/retriever';
 import { loadHistory, persistTurn } from './conversation';
-import type { LlmService } from './openai.service';
+import type { ChatMessage, LlmService } from './openai.service';
+
+/** Upper bound on sections sent to the model per request (retrieved + carried). */
+export const MAX_CONTEXT_CHUNKS = 4;
 
 interface Deps {
   conversations: ConversationRepository;
@@ -16,41 +19,60 @@ interface Deps {
   logger: Logger;
 }
 
+/** Sections cited in earlier assistant answers, most recent first, without duplicates. */
+function citedInHistory(history: ChatMessage[], policy: PolicyChunk[]): PolicyChunk[] {
+  const allIds = policy.map((c) => c.id);
+  const ids: string[] = [];
+  for (const m of [...history].reverse()) {
+    if (m.role !== 'assistant') continue;
+    for (const id of verifyCitations(m.content, allIds).valid) if (!ids.includes(id)) ids.push(id);
+  }
+  return ids.map((id) => policy.find((c) => c.id === id)!);
+}
+
 /**
  * "Help me": retrieval is deterministic (no AI); the LLM only phrases an answer from the
- * retrieved chunks. Retrieved chunk ids go to the client up front as `sources`.
+ * included chunks. Sections cited earlier in the conversation stay in context so follow-ups
+ * can still see (and cite) them. Included chunk ids go to the client up front as `sources`.
  */
 export function createHelpService({ conversations, llm, policy, logger }: Deps) {
   return {
     async prepare({ sessionId, message, language }: MessageRequest): Promise<TextStreamPlan> {
       const history = await loadHistory({ conversations, logger, sessionId, action: 'help' });
 
-      let chunks = retrieve(message, policy);
-      if (chunks.length === 0 && tokenize(message).length === 0) {
+      let retrieved = retrieve(message, policy);
+      if (retrieved.length === 0 && tokenize(message).length === 0) {
         // Purely referential follow-ups ("and what about that?") borrow terms from the previous
         // question. A new question with its own (unmatched) terms is a new topic: no borrowing.
         const previous = [...history].reverse().find((m) => m.role === 'user');
-        if (previous) chunks = retrieve(`${previous.content} ${message}`, policy);
+        if (previous) retrieved = retrieve(`${previous.content} ${message}`, policy);
       }
-      const sources = chunks.map((c) => c.id);
+      const retrievedIds = retrieved.map((c) => c.id);
+      const carried = citedInHistory(history, policy)
+        .filter((c) => !retrievedIds.includes(c.id))
+        .slice(0, Math.max(0, MAX_CONTEXT_CHUNKS - retrieved.length));
+      const sources = [...retrievedIds, ...carried.map((c) => c.id)];
       const prompt = HELP_PROMPT;
+      const persist = persistTurn({ conversations, logger, sessionId, action: 'help' }, message);
 
       return {
         sources,
         generate: (signal) =>
           llm.stream({
-            messages: prompt.build({ chunks, history, message, language }),
+            messages: prompt.build({ index: policy, retrieved, carried, history, message, language }),
             maxTokens: prompt.maxTokens,
             temperature: prompt.temperature,
             signal,
           }),
-        fallback: () => helpFallback(chunks),
+        // The fallback quotes only what matched *this* question, never carried context.
+        fallback: () => helpFallback(retrieved),
         citedSources: (text) => {
           const { valid, invalid } = verifyCitations(text, sources);
           if (invalid.length) logger.warn('Model cited policy chunks it was not given', { invalid });
           return valid;
         },
-        onComplete: persistTurn({ conversations, logger, sessionId, action: 'help' }, message),
+        // Store the reply with out-of-context citations removed so they can't mislead later turns.
+        onComplete: (reply) => persist(stripUnverifiedCitations(reply, sources)),
       };
     },
   };
