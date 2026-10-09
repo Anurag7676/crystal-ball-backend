@@ -2,7 +2,7 @@
 
 Express + TypeScript (strict) API for the **OomniEye Approvals assistant**, built for the Crystal Ball
 *Sr. Fullstack Developer — MERN + AI (Wave 2)* take-home. It serves the approval queue and five AI
-actions (Greeting, Summary, Talk, Help, Teach) backed by GPT-4o. Every action streams over SSE and falls back to a deterministic answer when the AI is unavailable.
+actions (Greeting, Summary, Talk, Help, Teach) backed by Claude (`claude-opus-5-5`) or GPT-4o, chosen by configuration. Every action streams over SSE and falls back to a deterministic answer when the AI is unavailable.
 
 The frontend is a separate repository (`crystal-ball-frontend`). The two repositories share no code and communicate only over HTTP.
 
@@ -34,7 +34,7 @@ reviewed every change and kept the test-first commit history.
 ```
 src/
   app.ts                 createApp(deps) — Express app without listen() (Supertest drives it)
-  server.ts              wires env → data layer → OpenAI provider → app.listen
+  server.ts              wires env → data layer → LLM provider (Claude or OpenAI) → app.listen
   config/                environment (Zod-validated env), database (optional MongoDB + fallback)
   schemas/               Zod contracts: requests, SSE events, summary, errors; contract.ts → JSON Schema
   routes/ controllers/   thin HTTP layer: per-IP limit → Zod validation → per-session limit → handler
@@ -110,14 +110,19 @@ keeps a copy and its own contract test fails if its schemas drift.
 | `PORT` | `4000` | |
 | `FRONTEND_URL` | `http://localhost:3000` | The only origin that receives CORS headers |
 | `MONGODB_URI` | *(empty)* | Optional. Leave it empty to use the JSON fixture and in-memory history |
-| `OPENAI_API_KEY` | *(empty)* | Without it, every AI action returns its labelled fallback |
+| `AI_PROVIDER` | *(auto)* | `anthropic` or `openai`. Default: Claude if `ANTHROPIC_API_KEY` is set, else OpenAI |
+| `ANTHROPIC_API_KEY` | *(empty)* | Claude API key |
+| `ANTHROPIC_MODEL` | `claude-opus-5-5` | |
+| `OPENAI_API_KEY` | *(empty)* | OpenAI API key |
 | `OPENAI_MODEL` | `gpt-4o` | |
+
+With neither key set, every AI action returns its labelled fallback.
 | `LLM_TIMEOUT_MS` | `8000` | Per-call budget (see "Timeouts") |
 
 ## Setup
 
 ```bash
-cp .env.example .env      # add OPENAI_API_KEY (and optionally MONGODB_URI)
+cp .env.example .env      # add ANTHROPIC_API_KEY or OPENAI_API_KEY (and optionally MONGODB_URI)
 npm install
 npm run dev               # http://localhost:4000
 ```
@@ -141,7 +146,16 @@ Only user and assistant turns are stored; system prompts and credentials never a
 
 ## AI integration
 
-- The **OpenAI Node SDK** with `gpt-4o` is called only from the server, and the key never leaves it. `createOpenAiProvider` is a thin seam, and tests swap it for `FakeProvider`.
+- **Two providers sit behind one `LlmProvider` interface**, and both are called only from the server, so keys never leave it. Tests swap either one for `FakeProvider`.
+  - **Claude** (`anthropic.provider.ts`, official `@anthropic-ai/sdk`, `claude-opus-5-5`):
+    - The system prompt goes in `system`.
+    - Effort is `low` so the first token arrives well inside the 8 s budget. Thinking is always on for this model, so the output limit gets 2,048 extra tokens.
+    - No temperature is sent, because the model doesn't accept it.
+    - The summary uses structured outputs (`output_config.format`) with a JSON Schema. Keywords the API doesn't support (lengths, item counts) are stripped and still enforced by Zod.
+    - Server-side refusal fallback is on (`fallbacks: "default"`), so a safety decline retries on another model within the same call. A final refusal counts as a provider error and triggers our deterministic fallback.
+    - While the model is thinking, the stream sends empty heartbeats so the idle timer doesn't mistake it for a stall.
+  - **OpenAI** (`openai.service.ts`, `gpt-4o`): the summary uses JSON mode.
+- **Measured on Claude:** greeting about 2.3 s, chat and help 2–4 s, teach about 6 s (first token after about 2 s), summary about 5.4 s with `SUMMARY_PROMPT_V2`. V1 took about 7 s, which motivated V2's length bounds.
 - **`LlmService`** wraps the provider and owns the reliability rules: timeouts, cancellation through `AbortController` when the client disconnects or presses Stop, and error normalisation. A provider that ignores the abort signal still can't hang a request, because every await is raced against the abort.
 - **Prompts** live in `src/prompts/*.prompt.ts` as `*_PROMPT_V1` exports. Each one declares its version, `maxTokens` and temperature. Services import the active alias (`CHAT_PROMPT = CHAT_PROMPT_V1`), so bumping a version is a one-line change.
 - **Prompt-injection awareness:**
@@ -171,7 +185,7 @@ A purely referential follow-up such as "and what about that?" reuses the previou
 
 ### Timeouts and fallbacks
 
-**Assumption:** a complete streamed GPT-4o answer can take longer than 8 s to arrive, so a hard 8 s total cap would cut off normal answers. Streams therefore get three limits:
+**Assumption:** a complete streamed answer can take longer than 8 s to arrive, so a hard 8 s total cap would cut off normal answers. Streams therefore get three limits:
 - **8 s to the first token**
 - **8 s maximum silence between tokens**
 - a 30 s overall cap
