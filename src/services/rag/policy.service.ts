@@ -28,6 +28,20 @@ export function parsePolicyChunks(markdown: string): PolicyChunk[] {
   return chunks;
 }
 
+const CITATION = /\[(policy-\d+)\]/g;
+
+/**
+ * Lightweight post-check on free text: which cited ids were really provided to the model.
+ * It can't prove an answer is correct — only that its citations point at real, retrieved chunks.
+ */
+export function verifyCitations(text: string, retrievedIds: string[]): { valid: string[]; invalid: string[] } {
+  const cited = [...new Set([...text.matchAll(CITATION)].map((m) => m[1]!))];
+  return {
+    valid: cited.filter((id) => retrievedIds.includes(id)),
+    invalid: cited.filter((id) => !retrievedIds.includes(id)),
+  };
+}
+
 let cached: PolicyChunk[] | undefined;
 
 export function loadPolicyChunks(): PolicyChunk[] {

@@ -4,6 +4,7 @@ import type { ConversationRepository } from '../repositories/conversation.reposi
 import type { AiAction, GreetingRequest, MessageRequest, SummaryRequest } from '../schemas/ai.schema';
 import { createChatService } from '../services/ai/chat.service';
 import { createGreetingService } from '../services/ai/greeting.service';
+import { createHelpService } from '../services/ai/help.service';
 import type { LlmService } from '../services/ai/openai.service';
 import { createSummaryService } from '../services/ai/summary.service';
 import type { PolicyChunk } from '../services/rag/policy.service';
@@ -28,6 +29,7 @@ export function createAiController(deps: AiControllerDeps): Record<AiAction, Req
   const greeting = createGreetingService(deps);
   const summary = createSummaryService(deps);
   const chat = createChatService(deps);
+  const help = createHelpService(deps);
 
   return {
     greeting: async (req, res) => {
@@ -48,7 +50,10 @@ export function createAiController(deps: AiControllerDeps): Record<AiAction, Req
       const plan = await chat.prepare(req.body as MessageRequest);
       await streamText(res, { action: 'chat', plan, logger });
     },
-    help: notImplemented,
+    help: async (req, res) => {
+      const plan = await help.prepare(req.body as MessageRequest);
+      await streamText(res, { action: 'help', plan, logger });
+    },
     teach: notImplemented,
   };
 }

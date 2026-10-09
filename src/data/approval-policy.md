@@ -17,4 +17,4 @@ Content describing safety equipment, sensors, emergency procedures or restricted
 
 ## [policy-4] Media quality and resubmission
 
-Videos must be at least 720p with legible on-screen text. Images used as maps or layouts must show a scale or a reference marker. Rejected items return to the submitter, who can resubmit a corrected version; a resubmission re-enters the queue as a new pending item and is reviewed from Step 1. Items without a decision for more than 5 working days should be flagged to the operations manager.
+Videos are required to be at least 720p resolution, with legible on-screen text. Images used as maps or layouts must show a scale or a reference marker. Rejected items return to the submitter, who can resubmit a corrected version; a resubmission re-enters the queue as a new pending item and is reviewed from Step 1. Items without a decision for more than 5 working days should be flagged to the operations manager.

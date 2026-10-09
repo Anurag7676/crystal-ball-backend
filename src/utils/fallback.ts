@@ -1,5 +1,6 @@
 import type { Summary } from '../schemas/ai.schema';
 import type { Approval } from '../schemas/approval.schema';
+import type { PolicyChunk } from '../services/rag/policy.service';
 
 /**
  * Deterministic, non-AI answers used when GPT-4o is unavailable, slow, or returns something
@@ -64,6 +65,18 @@ export function chatFallback(message: string, approvals: Approval[]): string | n
   }
 
   return null;
+}
+
+/** Help fallback: quote the best retrieved policy section verbatim, or say we have nothing. */
+export function helpFallback(chunks: PolicyChunk[]): string {
+  const [best] = chunks;
+  if (!best) {
+    return "The AI assistant is unavailable, and I couldn't find a section of the approval policy that answers this question.";
+  }
+  return (
+    'The AI assistant is unavailable, so here is the most relevant section of the approval policy:\n\n' +
+    `[${best.id}] ${best.heading}: ${best.text}`
+  );
 }
 
 export function summaryFallback(approvals: Approval[]): Summary {
