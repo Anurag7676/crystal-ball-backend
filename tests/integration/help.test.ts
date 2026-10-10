@@ -119,6 +119,19 @@ describe('POST /api/ai/help', () => {
       expect(find(events, 'done')).toEqual({ source: 'ai', citedSources: ['policy-4', 'policy-3'] });
     });
 
+    it('regression R5: a fresh session asking about a maximum upload size sees the whole policy', async () => {
+      const { events, system } = await fresh(
+        'whole-policy-05',
+        'What is the maximum file upload size allowed by our policy?',
+        'The policy sets no upload size limit; videos must be at least 720p [policy-4]. It covers folders, videos, PDFs and images [policy-1].',
+      );
+
+      expect([...(find(events, 'meta')!.sources as string[])].sort()).toEqual(ALL);
+      expect(system).toContain('All policy sections are included for this question.');
+      expect(system).toMatch(/only say the policy has no .* when all policy sections are included/i);
+      expect(find(events, 'done')).toEqual({ source: 'ai', citedSources: ['policy-4', 'policy-1'] });
+    });
+
     it('keeps normal top-2 retrieval for a general procedure question', async () => {
       const { events, system } = await fresh('whole-policy-04', 'What is the procedure for reviewing safety equipment?', 'ok');
 

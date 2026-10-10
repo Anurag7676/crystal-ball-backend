@@ -58,6 +58,10 @@ describe('asksAboutWholePolicy', () => {
     'Is there a deadline for reviewing videos?',
     'Are there any exceptions to the review steps?',
     'Is safety lead sign-off mandatory?',
+    'What is the maximum file upload size allowed by our policy?', // regression: R5 retrieved only policy-1
+    'Is there a size limit for uploads?',
+    'What is the minimum video resolution?',
+    'Are PDFs permitted in the workspace?',
   ])('treats "%s" as a whole-policy question', (question) => {
     expect(asksAboutWholePolicy(question)).toBe(true);
   });
@@ -67,6 +71,8 @@ describe('asksAboutWholePolicy', () => {
     'What video resolution is needed?',
     'Can I review an item I submitted myself?',
     'What is on the cafeteria menu today?',
+    'How do I check that a video plays end to end?',
+    'What image size works best for a camera map?',
   ])('keeps normal retrieval for "%s"', (question) => {
     expect(asksAboutWholePolicy(question)).toBe(false);
   });
