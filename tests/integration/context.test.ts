@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { FixtureApprovalRepository } from '../../src/repositories/approval.repository';
 import { textScript } from '../helpers/fakes';
+import { eventsOf, find } from '../helpers/sse';
 import { buildTestApp, mutableApprovals } from '../helpers/testApp';
 
 /**
@@ -65,6 +66,38 @@ describe('AI context assembly', () => {
     await post(app, 'help', 'ctx-help-0002', 'Who submitted it?');
 
     expect(provider!.calls[1]!.messages[0]!.content).toMatch(/<referenced_items>[\s\S]*"id": "apr-002"/);
+  });
+
+  it('Help keeps a general safety-equipment question general (regression) with valid citations', async () => {
+    const { app, provider } = buildTestApp({
+      script: textScript('Review safety items first [policy-3]. Then follow the steps [policy-2] [policy-3].'),
+    });
+
+    const events = eventsOf(await post(app, 'help', 'ctx-help-0010', 'What is the procedure for reviewing safety equipment?'));
+
+    expect(provider!.calls[0]!.messages[0]!.content).not.toContain('<referenced_items>');
+    expect(find(events, 'done')).toEqual({ source: 'ai', citedSources: ['policy-3', 'policy-2'] });
+  });
+
+  it('Help attaches apr-003 only when the question names it explicitly', async () => {
+    const { app, provider } = buildTestApp({ script: textScript('Check the specs [policy-3].') });
+
+    await post(app, 'help', 'ctx-help-0011', 'What should I check for apr-003?');
+
+    expect(provider!.calls[0]!.messages[0]!.content).toMatch(/<referenced_items>[\s\S]*"id": "apr-003"/);
+  });
+
+  it('Help keeps the selected item for "this item" after the detail-panel question', async () => {
+    const { app, provider } = buildTestApp({ script: textScript('Steps [policy-2].') });
+
+    await post(app, 'help', 'ctx-help-0012', 'How do I review "Safety Equipment & Sensor Specs"?');
+    await post(app, 'help', 'ctx-help-0012', 'How do I review this item?');
+    await post(app, 'help', 'ctx-help-0012', 'What is the procedure for reviewing safety equipment?');
+
+    const prompts = provider!.calls.map((c) => c.messages[0]!.content);
+    expect(prompts[0]).toMatch(/<referenced_items>[\s\S]*"id": "apr-003"/);
+    expect(prompts[1]).toMatch(/<referenced_items>[\s\S]*"id": "apr-003"/);
+    expect(prompts[2]).not.toContain('<referenced_items>');
   });
 
   it('Help adds no approval metadata to purely procedural questions', async () => {
