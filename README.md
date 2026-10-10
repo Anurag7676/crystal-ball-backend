@@ -2,7 +2,7 @@
 
 Express + TypeScript (strict) API for the **OomniEye Approvals assistant**, built for the Crystal Ball
 *Sr. Fullstack Developer — MERN + AI (Wave 2)* take-home. It serves the approval queue and five AI
-actions (Greeting, Summary, Talk, Help, Teach) backed by Claude (`claude-opus-5-5`) or GPT-4o, chosen by configuration. Every action streams over SSE and falls back to a deterministic answer when the AI is unavailable.
+actions (Greeting, Summary, Talk, Help, Teach) backed by Claude (`claude-sonnet-5-5`) or GPT-4o, chosen by configuration. Every action streams over SSE and falls back to a deterministic answer when the AI is unavailable.
 
 The frontend is a separate repository (`crystal-ball-frontend`). The two repositories share no code and communicate only over HTTP.
 
@@ -112,7 +112,7 @@ keeps a copy and its own contract test fails if its schemas drift.
 | `MONGODB_URI` | *(empty)* | Optional. Leave it empty to use the JSON fixture and in-memory history |
 | `AI_PROVIDER` | *(auto)* | `anthropic` or `openai`. Default: Claude if `ANTHROPIC_API_KEY` is set, else OpenAI |
 | `ANTHROPIC_API_KEY` | *(empty)* | Claude API key |
-| `ANTHROPIC_MODEL` | `claude-opus-5-5` | |
+| `ANTHROPIC_MODEL` | `claude-opus-5-5` | Set to `claude-sonnet-5-5`, the model this app runs on |
 | `OPENAI_API_KEY` | *(empty)* | OpenAI API key |
 | `OPENAI_MODEL` | `gpt-4o` | |
 
@@ -147,15 +147,15 @@ Only user and assistant turns are stored; system prompts and credentials never a
 ## AI integration
 
 - **Two providers sit behind one `LlmProvider` interface**, and both are called only from the server, so keys never leave it. Tests swap either one for `FakeProvider`.
-  - **Claude** (`anthropic.provider.ts`, official `@anthropic-ai/sdk`, `claude-opus-5-5`):
+  - **Claude** (`anthropic.provider.ts`, official `@anthropic-ai/sdk`, `claude-sonnet-5-5`):
     - The system prompt goes in `system`.
-    - Effort is `low` so the first token arrives well inside the 8 s budget. Thinking is always on for this model, so the output limit gets 2,048 extra tokens.
+    - Effort is `low` so the first token arrives well inside the 8 s budget. The output limit gets 2,048 extra tokens so thinking never cuts off the answer.
     - No temperature is sent, because the model doesn't accept it.
     - The summary uses structured outputs (`output_config.format`) with a JSON Schema. Keywords the API doesn't support (lengths, item counts) are stripped and still enforced by Zod.
     - Server-side refusal fallback is on (`fallbacks: "default"`), so a safety decline retries on another model within the same call. A final refusal counts as a provider error and triggers our deterministic fallback.
     - While the model is thinking, the stream sends empty heartbeats so the idle timer doesn't mistake it for a stall.
   - **OpenAI** (`openai.service.ts`, `gpt-4o`): the summary uses JSON mode.
-- **Measured on Claude:** greeting about 2.3 s, chat and help 2–4 s, teach about 6 s (first token after about 2 s), summary about 5.4 s with `SUMMARY_PROMPT_V2`. V1 took about 7 s, which motivated V2's length bounds.
+- **Measured on `claude-sonnet-5-5`:** first token after about 1 s for every streamed action. Greeting finishes in about 1.3 s, chat and help in 1.5–3.5 s, teach in 2–4.5 s, and the summary in 2.7–3.9 s with `SUMMARY_PROMPT_V2`. On `claude-opus-5-5`, V1 of the summary prompt took about 7 s, which motivated V2's length bounds.
 - **`LlmService`** wraps the provider and owns the reliability rules: timeouts, cancellation through `AbortController` when the client disconnects or presses Stop, and error normalisation. A provider that ignores the abort signal still can't hang a request, because every await is raced against the abort.
 - **Prompts** live in `src/prompts/*.prompt.ts` as `*_PROMPT_V1` exports. Each one declares its version, `maxTokens` and temperature. Services import the active alias (`CHAT_PROMPT = CHAT_PROMPT_V1`), so bumping a version is a one-line change.
 - **Prompt-injection awareness:**
@@ -226,7 +226,7 @@ The checks can only run on the complete answer: the JSON shape, `pendingCount` a
 | First review-order item complete | ~3.2 s |
 | Full summary | ~5.3 s |
 
-Streaming could show unverified fragments about 2 s earlier. The validated summary arrives at about 5.3 s either way, within the 8 s budget.
+Streaming could show unverified fragments about 2 s earlier. The validated summary arrives at about 5.3 s either way, within the 8 s budget. These figures were measured on `claude-opus-5-5`. On `claude-sonnet-5-5` the full summary arrives in 2.7–3.9 s.
 
 **Guarantees:**
 - One schema-constrained completion with a hard 8 s limit for the whole call.
