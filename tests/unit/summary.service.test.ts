@@ -64,6 +64,28 @@ describe('summary service — AI path', () => {
   });
 });
 
+describe('summary service — 8-second budget', () => {
+  afterEach(() => jest.useRealTimers());
+
+  it('falls back at exactly 8s when the model stalls (whole-call budget, not first-token)', async () => {
+    jest.useFakeTimers();
+    const service = createSummaryService({
+      approvals: new FixtureApprovalRepository(),
+      llm: new LlmService(new FakeProvider({ kind: 'hang' })), // default timeouts
+    });
+
+    let settled = false;
+    const result = service.generate({ sessionId: 'session-1234' }, new AbortController().signal).finally(() => {
+      settled = true;
+    });
+
+    await jest.advanceTimersByTimeAsync(7_999);
+    expect(settled).toBe(false);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(await result).toMatchObject({ source: 'fallback', fallbackReason: 'timeout' });
+  });
+});
+
 describe('summary service — deterministic verification and fallback', () => {
   it.each<[string, FakeScript]>([
     ['malformed JSON', textScript('{"pendingCount": 4, "overview": ')],

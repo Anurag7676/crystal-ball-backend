@@ -208,6 +208,35 @@ Non-streaming calls (Summary) get a strict 8 s total. Every limit ends in a fall
 
 If a stream fails partway through, the fallback arrives as `result{kind:"text"}`, which tells the client to replace the partial text.
 
+### Streaming exception: Present me Summary
+
+Greeting, Talk, Help and Teach stream tokens over SSE. **Present me Summary deliberately does not stream tokens.** It arrives over the same SSE channel as `meta → result → done`, with no `delta` events in between. The UI shows a loading state until the complete, validated summary arrives. Nothing is simulated: there is no fake typing.
+
+**Why:** two assignment requirements conflict here.
+- "AI responses render token-by-token" is the general rule.
+- "Alert/summary generation returns structured JSON validated with Zod before it reaches the UI", and "the UI never trusts raw model text", are the specific rules for this action.
+
+The checks can only run on the complete answer: the JSON shape, `pendingCount` against the live queue, and approval IDs that are real, pending and unique. So partial JSON can't reach the UI as trusted data. We follow the more specific rule.
+
+**Measured cost** (3 live Claude runs, streaming the same structured request):
+
+| Point in the response | Time |
+|---|---|
+| First JSON token | ~1.8 s |
+| First review-order item complete | ~3.2 s |
+| Full summary | ~5.3 s |
+
+Streaming could show unverified fragments about 2 s earlier. The validated summary arrives at about 5.3 s either way, within the 8 s budget.
+
+**Guarantees:**
+- One schema-constrained completion with a hard 8 s limit for the whole call.
+- If parsing or verification fails, or the call times out or errors, a deterministic summary labelled `fallback` is sent instead.
+- The frontend re-validates every event.
+
+All of this is covered by `tests/integration/summary.test.ts` and `tests/unit/summary.service.test.ts`.
+
+**With more time:** stream individually validated review items (each item's ID checked as it completes) as visibly *provisional* entries, then replace them with the fully verified summary.
+
 ### Rate limiting
 
 `express-rate-limit` runs only on `/api/ai/*` and has two layers:

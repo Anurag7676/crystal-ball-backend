@@ -46,6 +46,26 @@ describe('POST /api/ai/summary', () => {
     expect(find(events, 'done')).toEqual({ source: 'fallback', fallbackReason: 'timeout' });
   });
 
+  it('requests one schema-constrained completion (not a token stream) and sends no partial events', async () => {
+    const { app, provider } = buildTestApp({ script: jsonScript(validOutput) });
+
+    const events = eventsOf(await post(app));
+
+    expect(provider!.calls).toHaveLength(1);
+    expect(provider!.calls[0]).toMatchObject({ json: true, jsonSchema: expect.objectContaining({ type: 'object' }) });
+    expect(names(events).filter((n) => n === 'delta')).toEqual([]);
+  });
+
+  it('falls back when schema-valid JSON fails verification against the live queue (wrong count)', async () => {
+    const { app } = buildTestApp({ script: jsonScript({ ...validOutput, pendingCount: 7 }) });
+
+    const events = eventsOf(await post(app));
+
+    expect(names(events)).toEqual(['meta', 'result', 'done']);
+    expect((find(events, 'result') as { summary: { pendingCount: number } }).summary.pendingCount).toBe(4);
+    expect(find(events, 'done')).toEqual({ source: 'fallback', fallbackReason: 'invalid_output' });
+  });
+
   it('degrades when the provider errors', async () => {
     const { app } = buildTestApp({ script: { kind: 'error', error: new Error('503 from upstream') } });
 
