@@ -58,7 +58,7 @@ export const DEFAULT_TOP_K = 2;
  * policy is ~320 words, so sending all of it for these questions is cheap.
  */
 const WHOLE_POLICY_QUESTION =
-  /\b(deadlines?|time[- ]limits?|time[- ]related|timeframes?|turnaround|how long|within|hours?|days?|overdue|requires?|required|requirements?|mandatory|must|obligat\w*|exceptions?|any rules?|all (?:the )?rules)\b/i;
+  /\b(deadlines?|time[- ]limits?|time[- ]related|timeframes?|turnaround|how long|within|hours?|days?|overdue|requires?|required|requirements?|mandatory|must|obligat\w*|exceptions?|any rules?|all (?:the )?rules|maximum|minimum|limits?|limited|allowed|permitted)\b/i;
 
 export const asksAboutWholePolicy = (question: string) => WHOLE_POLICY_QUESTION.test(question);
 
