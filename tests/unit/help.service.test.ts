@@ -4,6 +4,7 @@ import {
   HELP_PROMPT_V2,
   HELP_PROMPT_V3,
   HELP_PROMPT_V4,
+  HELP_PROMPT_V5,
 } from '../../src/prompts/help.prompt';
 import { FixtureApprovalRepository } from '../../src/repositories/approval.repository';
 import { InMemoryConversationRepository } from '../../src/repositories/conversation.repository';
@@ -44,7 +45,8 @@ describe('help prompt', () => {
     expect(HELP_PROMPT_V1.version).toBe(1);
     expect(HELP_PROMPT_V2.version).toBe(2);
     expect(HELP_PROMPT_V3.version).toBe(3);
-    expect(HELP_PROMPT).toBe(HELP_PROMPT_V4);
+    expect(HELP_PROMPT_V4.version).toBe(4);
+    expect(HELP_PROMPT).toBe(HELP_PROMPT_V5);
   });
 
   it('V3 forbids claiming earlier statements that are not in the conversation', () => {

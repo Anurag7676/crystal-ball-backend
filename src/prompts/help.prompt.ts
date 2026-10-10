@@ -155,4 +155,31 @@ export const HELP_PROMPT_V4: PromptDefinition<HelpContextV4> = {
   },
 };
 
-export const HELP_PROMPT = HELP_PROMPT_V4;
+export interface HelpContextV5 extends HelpContextV4 {
+  /** True when every policy section is included (questions about deadlines, requirements, …). */
+  wholePolicy: boolean;
+}
+
+/**
+ * V5: V4 claimed "the policy doesn't state any other time limit" after seeing only two sections
+ * (it had not seen the 5-working-day flagging rule). Whole-policy questions now receive every
+ * section, and the prompt limits absence claims to that case and separates thresholds from
+ * deadlines.
+ */
+export const HELP_PROMPT_V5: PromptDefinition<HelpContextV5> = {
+  ...HELP_PROMPT_V4,
+  version: 5,
+  build: ({ wholePolicy, ...ctx }) => {
+    const [system, ...rest] = HELP_PROMPT_V4.build(ctx);
+    const additions = [
+      ...(wholePolicy ? ['All policy sections are included for this question.'] : []),
+      'Only say the policy has no rule of some kind (no deadline, no time limit, no requirement) when all policy ' +
+        'sections are included; otherwise say which sections you checked.',
+      'A flagging threshold (for example, flagging items that stay undecided for some period) is not an approval ' +
+        'deadline: describe it exactly as the policy states it.',
+    ];
+    return [{ role: 'system', content: [system!.content, ...additions].join('\n\n') }, ...rest];
+  },
+};
+
+export const HELP_PROMPT = HELP_PROMPT_V5;

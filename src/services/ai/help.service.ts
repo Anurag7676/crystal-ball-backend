@@ -6,7 +6,7 @@ import { helpFallback } from '../../utils/fallback';
 import type { Logger } from '../../utils/logger';
 import type { TextStreamPlan } from '../../utils/streaming';
 import { type PolicyChunk, stripUnverifiedCitations, verifyCitations } from '../rag/policy.service';
-import { retrieve, tokenize } from '../rag/retriever';
+import { asksAboutWholePolicy, retrieve, tokenize } from '../rag/retriever';
 import { loadQueue, policyVocabulary, referencedInConversation } from './context';
 import { loadHistory, persistTurn } from './conversation';
 import type { ChatMessage, LlmService } from './openai.service';
@@ -44,13 +44,21 @@ export function createHelpService({ approvals, conversations, llm, policy, logge
     async prepare({ sessionId, message, language }: MessageRequest): Promise<TextStreamPlan> {
       const history = await loadHistory({ conversations, logger, sessionId, action: 'help' });
 
-      let retrieved = retrieve(message, policy);
-      if (retrieved.length === 0 && tokenize(message).length === 0) {
+      let matched: PolicyChunk[] = retrieve(message, policy);
+      if (matched.length === 0 && tokenize(message).length === 0) {
         // Purely referential follow-ups ("and what about that?") borrow terms from the previous
         // question. A new question with its own (unmatched) terms is a new topic: no borrowing.
         const previous = [...history].reverse().find((m) => m.role === 'user');
-        if (previous) retrieved = retrieve(`${previous.content} ${message}`, policy);
+        if (previous) matched = retrieve(`${previous.content} ${message}`, policy);
       }
+      // Deadline / requirement / exception questions see every section (best matches first), so an
+      // answer like "the policy has no other time limit" is never based on partial context.
+      const wholePolicy = asksAboutWholePolicy(message);
+      const retrieved = wholePolicy
+        ? [...retrieve(message, policy, policy.length), ...policy].filter(
+            (c, i, all) => all.findIndex((x) => x.id === c.id) === i,
+          )
+        : matched;
       const retrievedIds = retrieved.map((c) => c.id);
       const carried = citedInHistory(history, policy)
         .filter((c) => !retrievedIds.includes(c.id))
@@ -65,13 +73,22 @@ export function createHelpService({ approvals, conversations, llm, policy, logge
         sources,
         generate: (signal) =>
           llm.stream({
-            messages: prompt.build({ index: policy, retrieved, carried, referenced, history, message, language }),
+            messages: prompt.build({
+              index: policy,
+              retrieved,
+              carried,
+              referenced,
+              wholePolicy,
+              history,
+              message,
+              language,
+            }),
             maxTokens: prompt.maxTokens,
             temperature: prompt.temperature,
             signal,
           }),
-        // The fallback quotes only what matched *this* question, never carried context.
-        fallback: () => helpFallback(retrieved),
+        // The fallback quotes only what matched *this* question, never carried or padded context.
+        fallback: () => helpFallback(matched),
         citedSources: (text) => {
           const { valid, invalid } = verifyCitations(text, sources);
           if (invalid.length) logger.warn('Model cited policy chunks it was not given', { invalid });
