@@ -1,5 +1,7 @@
 import { createApp, type AppDeps } from '../../src/app';
-import { FixtureApprovalRepository } from '../../src/repositories/approval.repository';
+import { type ApprovalRepository, FixtureApprovalRepository } from '../../src/repositories/approval.repository';
+import { queryInMemory } from '../../src/repositories/approvalQuery';
+import type { Approval } from '../../src/schemas/approval.schema';
 import { InMemoryConversationRepository } from '../../src/repositories/conversation.repository';
 import { LlmService } from '../../src/services/ai/openai.service';
 import { loadPolicyChunks } from '../../src/services/rag/policy.service';
@@ -14,6 +16,22 @@ interface TestAppOptions {
   provider?: FakeProvider | null;
   timeoutMs?: number;
   rateLimits?: AppDeps['rateLimits'];
+  /** Override the approval store (e.g. to simulate a status change between requests). */
+  approvals?: AppDeps['approvals'];
+}
+
+/** In-memory approval repository whose records a test can change between requests. */
+export function mutableApprovals(initial: Approval[]) {
+  let records = initial.map((a) => ({ ...a }));
+  const repo: ApprovalRepository = {
+    source: 'fixture',
+    list: async () => records.map((a) => ({ ...a })),
+    query: async (q) => queryInMemory(records, q),
+  };
+  const setStatus = (id: string, status: Approval['status']) => {
+    records = records.map((a) => (a.id === id ? { ...a, status } : a));
+  };
+  return { repo, setStatus };
 }
 
 /** Builds the real Express app wired to fakes: fixture data, in-memory history, fake GPT-4o. */
@@ -21,7 +39,7 @@ export function buildTestApp(options: TestAppOptions = {}) {
   const provider =
     options.provider === null ? null : (options.provider ?? new FakeProvider(options.script ?? textScript('Hello')));
   const conversations = new InMemoryConversationRepository();
-  const approvals = new FixtureApprovalRepository();
+  const approvals = options.approvals ?? new FixtureApprovalRepository();
   const llm = new LlmService(provider, {
     timeoutMs: options.timeoutMs ?? 200,
     idleTimeoutMs: options.timeoutMs ?? 200,
