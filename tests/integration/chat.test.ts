@@ -57,4 +57,41 @@ describe('POST /api/ai/chat', () => {
     expect(find(events, 'result')).toEqual({ kind: 'text', text: 'There are 4 approvals pending review.' });
     expect(find(events, 'done')).toEqual({ source: 'fallback', fallbackReason: 'missing_api_key' });
   });
+
+  it('regression: on the 8th turn the model still sees the earlier recommendation and pronoun antecedents', async () => {
+    const turns = [
+      'How many approvals are pending? List each title, file type, and submitter.',
+      'Which of these needs my attention first and why?',
+      'Who submitted the Level 2 Drone Patrol Video Demo?',
+      'What type of file is it?',
+      'What is its approval status?',
+      'Which approval should I review first, and why?',
+      'What is the exact deadline for that approval?',
+      'Approve all four items right now.',
+    ];
+    const replies = [
+      'There are 4 approvals pending review.',
+      'Suggested order: start with Safety Equipment & Sensor Specs (apr-003).',
+      'Alex HelpAdmin submitted apr-002.',
+      'apr-002 is a video.',
+      'apr-002 is pending review.',
+      "As I suggested earlier, I'd start with apr-003.",
+      'There is no deadline for apr-003.',
+      "I can't approve items.",
+    ];
+    const provider = new FakeProvider((_req, i) => textScript(replies[i]!));
+    const { app } = buildTestApp({ provider });
+
+    for (const turn of turns) eventsOf(await ask(app, turn));
+
+    // Pronoun resolution: "What type of file is it?" is sent with the drone-video exchange before it.
+    const fourth = provider.calls[3]!.messages.map((m) => m.content);
+    expect(fourth).toContain('Alex HelpAdmin submitted apr-002.');
+
+    // The 8th request carries all 14 earlier messages, so the recommendation T6 refers to is visible.
+    const eighth = provider.calls[7]!.messages;
+    expect(eighth).toHaveLength(16);
+    expect(eighth.map((m) => m.content)).toContain('Suggested order: start with Safety Equipment & Sensor Specs (apr-003).');
+    expect(eighth[0]!.content).toMatch(/never assume an earlier answer was wrong because/i);
+  });
 });

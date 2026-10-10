@@ -1,4 +1,10 @@
-import { CHAT_PROMPT, CHAT_PROMPT_V1, CHAT_PROMPT_V2, CHAT_PROMPT_V3 } from '../../src/prompts/chat.prompt';
+import {
+  CHAT_PROMPT,
+  CHAT_PROMPT_V1,
+  CHAT_PROMPT_V2,
+  CHAT_PROMPT_V3,
+  CHAT_PROMPT_V4,
+} from '../../src/prompts/chat.prompt';
 import { FixtureApprovalRepository } from '../../src/repositories/approval.repository';
 import {
   type ConversationRepository,
@@ -31,12 +37,106 @@ function setup(conversations: ConversationRepository = new InMemoryConversationR
 }
 
 describe('chat prompt', () => {
-  it('is versioned; V3 is active and keeps V2’s no-markdown rule', () => {
+  it('is versioned; V4 is active and keeps the V2/V3 rules', () => {
     expect(CHAT_PROMPT_V1.version).toBe(1);
     expect(CHAT_PROMPT_V2.version).toBe(2);
-    expect(CHAT_PROMPT).toBe(CHAT_PROMPT_V3);
-    const system = CHAT_PROMPT_V3.build({ queue: [], history: [], message: 'hi' })[0]!.content;
+    expect(CHAT_PROMPT_V3.version).toBe(3);
+    expect(CHAT_PROMPT).toBe(CHAT_PROMPT_V4);
+    const system = CHAT_PROMPT_V4.build({ queue: [], history: [], message: 'hi', historyTruncated: false })[0]!.content;
     expect(system).toMatch(/no markdown/i);
+    expect(system).toMatch(/current queue overrides anything said earlier/i);
+  });
+});
+
+describe('chat history window (regression: invented retraction after trimming)', () => {
+  // The exact acceptance-test conversation before T7: T1, a starter question whose answer made
+  // the suggestion, then T2–T6 (T5's answer says "As I suggested earlier").
+  const exchanges: [string, string][] = [
+    ['How many approvals are pending? List each title, file type, and submitter.', 'There are 4 approvals pending review: …'],
+    ['Which of these needs my attention first and why?', 'Suggested order: start with Safety Equipment & Sensor Specs (apr-003) …'],
+    ['Who submitted the Level 2 Drone Patrol Video Demo?', 'Alex HelpAdmin on Sep 18.'],
+    ['What type of file is it?', 'It is a video file.'],
+    ['What is its approval status?', 'It is pending review.'],
+    ['Which approval should I review first, and why?', "As I suggested earlier, I'd start with Safety Equipment & Sensor Specs (apr-003)."],
+    ['What is the exact deadline for that approval?', 'There is no deadline for apr-003.'],
+  ];
+
+  async function seeded(pairs: [string, string][], sessionId = 'session-1234') {
+    const conversations = new InMemoryConversationRepository();
+    for (const [user, assistant] of pairs) {
+      const now = new Date();
+      await conversations.appendMessages(sessionId, 'chat', [
+        { role: 'user', content: user, timestamp: now },
+        { role: 'assistant', content: assistant, timestamp: now },
+      ]);
+    }
+    return conversations;
+  }
+
+  it('sends all 14 earlier messages in order, including the suggestion T5 refers to', async () => {
+    const { ask, provider } = setup(await seeded(exchanges));
+
+    await ask('Approve all four items right now.');
+
+    const sent = provider.calls[0]!.messages;
+    expect(sent).toHaveLength(1 + 14 + 1);
+    expect(sent.slice(1, -1).map((m) => m.content)).toEqual(exchanges.flat());
+    expect(sent[0]!.content).not.toMatch(/some earlier messages of this conversation are not shown/i);
+  });
+
+  it('passes up to 20 messages and says so when older ones are omitted', async () => {
+    const many = Array.from({ length: 12 }, (_, i): [string, string] => [`question ${i}`, `answer ${i}`]);
+    const { ask, provider } = setup(await seeded(many));
+
+    await ask('next');
+
+    const history = provider.calls[0]!.messages.slice(1, -1);
+    expect(HISTORY_TURNS_IN_PROMPT).toBe(20);
+    expect(history).toHaveLength(20);
+    expect(history[0]).toEqual({ role: 'user', content: 'question 2' }); // oldest kept, chronological
+    expect(provider.calls[0]!.messages[0]!.content).toMatch(/some earlier messages of this conversation are not shown/i);
+  });
+
+  it('trims oldest whole exchanges to stay within the size budget, always starting with a user turn', async () => {
+    const long = 'x'.repeat(5_000);
+    const { ask, provider } = setup(
+      await seeded([
+        ['first', long],
+        ['second', long],
+        ['third', long],
+        ['fourth', 'short answer'],
+      ]),
+    );
+
+    await ask('fifth');
+
+    const history = provider.calls[0]!.messages.slice(1, -1);
+    expect(history.length).toBeLessThan(8);
+    expect(history[0]!.role).toBe('user');
+    expect(history.at(-1)).toEqual({ role: 'assistant', content: 'short answer' });
+    expect(provider.calls[0]!.messages[0]!.content).toMatch(/some earlier messages of this conversation are not shown/i);
+  });
+
+  it('tells the model omitted context is not evidence of a mistake, while allowing real corrections', () => {
+    const system = CHAT_PROMPT_V4.build({ queue: [], history: [], message: 'hi', historyTruncated: false })[0]!.content;
+
+    expect(system).toMatch(/earlier parts of this conversation may not be shown/i);
+    expect(system).toMatch(/never assume an earlier answer was wrong because/i);
+    expect(system).toMatch(/do not apologise for, correct or retract an earlier answer unless/i);
+    expect(system).toMatch(/the current queue clearly contradicts it/i);
+  });
+
+  it('keeps Chat history separate from other sessions and from other actions', async () => {
+    const conversations = await seeded(exchanges, 'session-aaaa');
+    await conversations.appendMessages('session-1234', 'help', [
+      { role: 'user', content: 'help question', timestamp: new Date() },
+      { role: 'assistant', content: 'help answer [policy-2]', timestamp: new Date() },
+    ]);
+    const { ask, provider } = setup(conversations);
+
+    await ask('hello');
+
+    expect(provider.calls[0]!.messages.map((m) => m.role)).toEqual(['system', 'user']);
   });
 });
 
