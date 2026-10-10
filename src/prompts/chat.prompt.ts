@@ -107,4 +107,32 @@ export const CHAT_PROMPT_V3: PromptDefinition<ChatContextV3> = {
   ],
 };
 
-export const CHAT_PROMPT = CHAT_PROMPT_V3;
+export interface ChatContextV4 extends ChatContextV3 {
+  /** True when older messages of this conversation exist but are not included below. */
+  historyTruncated: boolean;
+}
+
+/**
+ * V4: V3 plus explicit handling of partial history. V3 received only the last 10 messages; on a
+ * long conversation the model saw "As I suggested earlier" without the suggestion and "corrected"
+ * an answer that was right. The service now sends up to 20 messages (size-budgeted), and the
+ * prompt says omitted context is not evidence of a mistake.
+ */
+export const CHAT_PROMPT_V4: PromptDefinition<ChatContextV4> = {
+  ...CHAT_PROMPT_V3,
+  version: 4,
+  build: ({ historyTruncated, ...ctx }) => {
+    const [system, ...rest] = CHAT_PROMPT_V3.build(ctx);
+    const historyRule = [
+      'Earlier parts of this conversation may not be shown to you.',
+      'If an earlier answer refers to something you cannot see (for example "as I suggested earlier"), never assume ' +
+        'an earlier answer was wrong because its basis is not shown.',
+      'Do not apologise for, correct or retract an earlier answer unless the operator asks, or unless the current ' +
+        'queue clearly contradicts it — in that case state what the current queue shows.',
+      ...(historyTruncated ? ['Some earlier messages of this conversation are not shown here.'] : []),
+    ].join(' ');
+    return [{ role: 'system', content: `${system!.content}\n\n${historyRule}` }, ...rest];
+  },
+};
+
+export const CHAT_PROMPT = CHAT_PROMPT_V4;

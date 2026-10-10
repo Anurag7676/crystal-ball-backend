@@ -6,10 +6,13 @@ import { chatFallback } from '../../utils/fallback';
 import type { Logger } from '../../utils/logger';
 import type { TextStreamPlan } from '../../utils/streaming';
 import { loadQueue } from './context';
-import { loadHistory, persistTurn } from './conversation';
+import { loadHistoryWindow, persistTurn } from './conversation';
 import type { LlmService } from './openai.service';
 
-export { HISTORY_TURNS_IN_PROMPT } from './conversation';
+/** Talk to me sends up to the full stored history (20 messages)… */
+export const HISTORY_TURNS_IN_PROMPT = 20;
+/** …within a size budget (≈3k tokens), dropping the oldest whole messages first. */
+export const HISTORY_CHAR_BUDGET = 12_000;
 
 interface Deps {
   approvals: ApprovalRepository;
@@ -27,13 +30,22 @@ export function createChatService({ approvals, conversations, llm, logger }: Dep
   return {
     async prepare({ sessionId, message, language }: MessageRequest): Promise<TextStreamPlan> {
       const { all } = await loadQueue(approvals);
-      const history = await loadHistory({ conversations, logger, sessionId, action: 'chat' });
+      const history = await loadHistoryWindow(
+        { conversations, logger, sessionId, action: 'chat' },
+        { maxMessages: HISTORY_TURNS_IN_PROMPT, maxChars: HISTORY_CHAR_BUDGET },
+      );
       const prompt = CHAT_PROMPT;
 
       return {
         generate: (signal) =>
           llm.stream({
-            messages: prompt.build({ queue: all, history, message, language }),
+            messages: prompt.build({
+              queue: all,
+              history: history.messages,
+              historyTruncated: history.truncated,
+              message,
+              language,
+            }),
             maxTokens: prompt.maxTokens,
             temperature: prompt.temperature,
             signal,
