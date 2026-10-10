@@ -1,4 +1,4 @@
-import { retrieve, tokenize } from '../../src/services/rag/retriever';
+import { asksAboutWholePolicy, retrieve, tokenize } from '../../src/services/rag/retriever';
 import { loadPolicyChunks, parsePolicyChunks } from '../../src/services/rag/policy.service';
 
 const chunks = loadPolicyChunks();
@@ -47,5 +47,27 @@ describe('retrieve (keyword + IDF scoring)', () => {
   it('returns nothing when the policy does not cover the question', () => {
     expect(ids('What is on the cafeteria menu today?')).toEqual([]);
     expect(ids('what is the')).toEqual([]);
+  });
+});
+
+describe('asksAboutWholePolicy', () => {
+  it.each([
+    'Does the policy require safety lead approval within 24 hours?',
+    'Are there any time-related rules in the policy?',
+    'What happens after 5 working days?',
+    'Is there a deadline for reviewing videos?',
+    'Are there any exceptions to the review steps?',
+    'Is safety lead sign-off mandatory?',
+  ])('treats "%s" as a whole-policy question', (question) => {
+    expect(asksAboutWholePolicy(question)).toBe(true);
+  });
+
+  it.each([
+    'What is the procedure for reviewing safety equipment?',
+    'What video resolution is needed?',
+    'Can I review an item I submitted myself?',
+    'What is on the cafeteria menu today?',
+  ])('keeps normal retrieval for "%s"', (question) => {
+    expect(asksAboutWholePolicy(question)).toBe(false);
   });
 });

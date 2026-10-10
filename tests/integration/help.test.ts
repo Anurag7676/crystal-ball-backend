@@ -76,6 +76,57 @@ describe('POST /api/ai/help', () => {
     expect(second[0]!.content).not.toContain('Cited earlier in this conversation:');
   });
 
+  describe('whole-policy questions (regression: broad claim from partial context)', () => {
+    const ALL = ['policy-1', 'policy-2', 'policy-3', 'policy-4'];
+    const fresh = (sessionId: string, message: string, reply: string) => {
+      const built = buildTestApp({ script: textScript(reply) });
+      return request(built.app)
+        .post('/api/ai/help')
+        .send({ sessionId, message })
+        .expect(200)
+        .then((res) => ({ events: eventsOf(res), system: built.provider!.calls[0]!.messages[0]!.content }));
+    };
+
+    it.each([
+      ['Does the policy require safety lead approval within 24 hours?', 'policy-3'],
+      ['Are there any time-related rules in the policy?', undefined],
+      ['What happens after 5 working days?', 'policy-4'],
+    ])('"%s" gets every policy section, ranked matches first', async (question, firstRanked) => {
+      const { events, system } = await fresh('whole-policy-01', question, 'Flag it after 5 working days [policy-4].');
+
+      const sources = find(events, 'meta')!.sources as string[];
+      expect([...sources].sort()).toEqual(ALL);
+      if (firstRanked) expect(sources[0]).toBe(firstRanked);
+      for (const id of ALL) expect(system).toMatch(new RegExp(`\\[${id}\\] [A-Z][^:]+:`));
+      expect(system).toContain('All policy sections are included for this question.');
+      expect(system).toContain('should be flagged to the operations manager'); // the 5-working-day rule is visible
+    });
+
+    it('tells the model a flagging threshold is not an approval deadline and limits whole-policy claims', async () => {
+      const { system } = await fresh('whole-policy-02', 'Is there a deadline for approvals?', 'ok');
+
+      expect(system).toMatch(/a flagging threshold .* is not an approval deadline/i);
+      expect(system).toMatch(/only say the policy has no .* when all policy sections are included/i);
+    });
+
+    it('keeps citations validated and deduplicated for a whole-policy answer', async () => {
+      const { events } = await fresh(
+        'whole-policy-03',
+        'Are there any time-related rules in the policy?',
+        'No deadline; undecided items are flagged after 5 working days [policy-4] [policy-4]. Escalate if unsure [policy-3].',
+      );
+
+      expect(find(events, 'done')).toEqual({ source: 'ai', citedSources: ['policy-4', 'policy-3'] });
+    });
+
+    it('keeps normal top-2 retrieval for a general procedure question', async () => {
+      const { events, system } = await fresh('whole-policy-04', 'What is the procedure for reviewing safety equipment?', 'ok');
+
+      expect(find(events, 'meta')!.sources).toEqual(['policy-3', 'policy-2']);
+      expect(system).not.toContain('All policy sections are included for this question.');
+    });
+  });
+
   it('falls back to the retrieved policy text when the AI times out', async () => {
     const { app } = buildTestApp({ script: { kind: 'hang' }, timeoutMs: 50 });
 
