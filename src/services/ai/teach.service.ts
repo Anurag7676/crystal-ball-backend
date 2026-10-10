@@ -6,7 +6,7 @@ import { teachFallback } from '../../utils/fallback';
 import type { Logger } from '../../utils/logger';
 import type { TextStreamPlan } from '../../utils/streaming';
 import { type PolicyChunk, verifyCitations } from '../rag/policy.service';
-import { loadQueue, referencedInConversation } from './context';
+import { loadQueue, policyVocabulary, referencedInConversation } from './context';
 import { loadHistory, persistTurn } from './conversation';
 import type { LlmService } from './openai.service';
 
@@ -24,11 +24,12 @@ interface Deps {
  * retrieval is needed here.
  */
 export function createTeachService({ approvals, conversations, llm, policy, logger }: Deps) {
+  const genericWords = policyVocabulary(policy);
   return {
     async prepare({ sessionId, message, language }: MessageRequest): Promise<TextStreamPlan> {
       const { all, pending } = await loadQueue(approvals);
       const history = await loadHistory({ conversations, logger, sessionId, action: 'teach' });
-      const referenced = referencedInConversation(message, history, all);
+      const referenced = referencedInConversation(message, history, all, genericWords);
       const sources = policy.map((c) => c.id);
       const prompt = TEACH_PROMPT;
 

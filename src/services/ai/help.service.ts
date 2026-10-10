@@ -7,7 +7,7 @@ import type { Logger } from '../../utils/logger';
 import type { TextStreamPlan } from '../../utils/streaming';
 import { type PolicyChunk, stripUnverifiedCitations, verifyCitations } from '../rag/policy.service';
 import { retrieve, tokenize } from '../rag/retriever';
-import { loadQueue, referencedInConversation } from './context';
+import { loadQueue, policyVocabulary, referencedInConversation } from './context';
 import { loadHistory, persistTurn } from './conversation';
 import type { ChatMessage, LlmService } from './openai.service';
 
@@ -39,6 +39,7 @@ function citedInHistory(history: ChatMessage[], policy: PolicyChunk[]): PolicyCh
  * can still see (and cite) them. Included chunk ids go to the client up front as `sources`.
  */
 export function createHelpService({ approvals, conversations, llm, policy, logger }: Deps) {
+  const genericWords = policyVocabulary(policy);
   return {
     async prepare({ sessionId, message, language }: MessageRequest): Promise<TextStreamPlan> {
       const history = await loadHistory({ conversations, logger, sessionId, action: 'help' });
@@ -56,7 +57,7 @@ export function createHelpService({ approvals, conversations, llm, policy, logge
         .slice(0, Math.max(0, MAX_CONTEXT_CHUNKS - retrieved.length));
       const sources = [...retrievedIds, ...carried.map((c) => c.id)];
       // Approval metadata only when the question (or its antecedent) names an item.
-      const referenced = referencedInConversation(message, history, (await loadQueue(approvals)).all);
+      const referenced = referencedInConversation(message, history, (await loadQueue(approvals)).all, genericWords);
       const prompt = HELP_PROMPT;
       const persist = persistTurn({ conversations, logger, sessionId, action: 'help' }, message);
 
