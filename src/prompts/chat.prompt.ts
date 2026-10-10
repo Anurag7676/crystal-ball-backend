@@ -1,6 +1,15 @@
 import type { Approval } from '../schemas/approval.schema';
 import type { ChatMessage } from '../services/ai/openai.service';
-import { ASSISTANT_IDENTITY, DATA_SAFETY_RULES, formatQueue, languageInstruction, type PromptDefinition } from './shared';
+import {
+  ASSISTANT_IDENTITY,
+  CONVERSATION_RULE,
+  DATA_SAFETY_RULES,
+  formatQueue,
+  languageInstruction,
+  METADATA_ONLY_RULE,
+  type PromptDefinition,
+  QUEUE_AUTHORITY_RULE,
+} from './shared';
 
 export interface ChatContext {
   pending: Approval[];
@@ -51,4 +60,51 @@ export const CHAT_PROMPT_V2: PromptDefinition<ChatContext> = {
   },
 };
 
-export const CHAT_PROMPT = CHAT_PROMPT_V2;
+export interface ChatContextV3 {
+  /** Every approval with its current status (not only pending ones). */
+  queue: Approval[];
+  history: ChatMessage[];
+  message: string;
+  language?: string;
+}
+
+/**
+ * V3: the model sees the whole queue with current statuses (V1/V2 saw only pending items, so it
+ * could not answer about decided items), the queue is declared authoritative over earlier turns,
+ * and it is told it only has metadata — never file contents.
+ */
+export const CHAT_PROMPT_V3: PromptDefinition<ChatContextV3> = {
+  id: 'chat',
+  version: 3,
+  maxTokens: 450,
+  temperature: 0.4,
+  build: ({ queue, history, message, language }) => [
+    {
+      role: 'system',
+      content: [
+        ASSISTANT_IDENTITY,
+        DATA_SAFETY_RULES,
+        [
+          'Answer the operator’s questions about the approval queue below. Rules:',
+          '- Use only the queue data and the conversation so far. If something is not in the data, say so plainly.',
+          '- When asked what to review first, you may suggest an order among pending items based on what they are ' +
+            '(e.g. safety-related content first), and say it is a suggestion — the queue has no formal priorities.',
+          '- Resolve follow-ups ("it", "that one") from the conversation.',
+          '- If asked to approve, reject or change an item, explain that you cannot and the operator must do it.',
+          '- Be concise: under 120 words.',
+          'Format: plain text only — no markdown (no **bold**, headings, tables or code blocks). Use "1." style ' +
+            'numbered lines for lists.',
+        ].join('\n'),
+        QUEUE_AUTHORITY_RULE,
+        METADATA_ONLY_RULE,
+        CONVERSATION_RULE,
+        languageInstruction(language),
+        `<approval_queue>\n${formatQueue(queue)}\n</approval_queue>`,
+      ].join('\n\n'),
+    },
+    ...history,
+    { role: 'user', content: message },
+  ],
+};
+
+export const CHAT_PROMPT = CHAT_PROMPT_V3;

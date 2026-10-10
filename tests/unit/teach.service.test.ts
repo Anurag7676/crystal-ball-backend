@@ -1,4 +1,4 @@
-import { TEACH_PROMPT, TEACH_PROMPT_V1 } from '../../src/prompts/teach.prompt';
+import { TEACH_PROMPT, TEACH_PROMPT_V1, TEACH_PROMPT_V2 } from '../../src/prompts/teach.prompt';
 import { FixtureApprovalRepository } from '../../src/repositories/approval.repository';
 import { InMemoryConversationRepository } from '../../src/repositories/conversation.repository';
 import { LlmService } from '../../src/services/ai/openai.service';
@@ -36,7 +36,8 @@ function setup() {
 
 describe('teach prompt', () => {
   it('is versioned', () => {
-    expect(TEACH_PROMPT).toBe(TEACH_PROMPT_V1);
+    expect(TEACH_PROMPT_V1.version).toBe(1);
+    expect(TEACH_PROMPT).toBe(TEACH_PROMPT_V2);
   });
 });
 

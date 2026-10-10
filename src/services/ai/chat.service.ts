@@ -5,6 +5,7 @@ import type { MessageRequest } from '../../schemas/ai.schema';
 import { chatFallback } from '../../utils/fallback';
 import type { Logger } from '../../utils/logger';
 import type { TextStreamPlan } from '../../utils/streaming';
+import { loadQueue } from './context';
 import { loadHistory, persistTurn } from './conversation';
 import type { LlmService } from './openai.service';
 
@@ -25,15 +26,14 @@ interface Deps {
 export function createChatService({ approvals, conversations, llm, logger }: Deps) {
   return {
     async prepare({ sessionId, message, language }: MessageRequest): Promise<TextStreamPlan> {
-      const all = await approvals.list();
-      const pending = all.filter((a) => a.status === 'pending_review');
+      const { all } = await loadQueue(approvals);
       const history = await loadHistory({ conversations, logger, sessionId, action: 'chat' });
       const prompt = CHAT_PROMPT;
 
       return {
         generate: (signal) =>
           llm.stream({
-            messages: prompt.build({ pending, history, message, language }),
+            messages: prompt.build({ queue: all, history, message, language }),
             maxTokens: prompt.maxTokens,
             temperature: prompt.temperature,
             signal,

@@ -25,7 +25,8 @@ const TYPE_NAMES: Record<Approval['type'], string> = { folder: 'folder', video: 
 const TYPE_LABELS: Record<Approval['type'], string> = { folder: 'Folder', video: 'Video', pdf: 'PDF', image: 'Image' };
 const IGNORED_WORDS = new Set(['submitted', 'submit', 'uploaded', 'approval', 'approvals', 'which', 'what', 'item', 'items']);
 
-const significantWords = (text: string) =>
+/** Distinctive lower-case words (≥4 chars, minus generic ones) used to match text to approval titles. */
+export const significantWords = (text: string) =>
   new Set(
     text
       .toLowerCase()

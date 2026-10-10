@@ -6,6 +6,7 @@ import { teachFallback } from '../../utils/fallback';
 import type { Logger } from '../../utils/logger';
 import type { TextStreamPlan } from '../../utils/streaming';
 import { type PolicyChunk, verifyCitations } from '../rag/policy.service';
+import { loadQueue, referencedInConversation } from './context';
 import { loadHistory, persistTurn } from './conversation';
 import type { LlmService } from './openai.service';
 
@@ -25,8 +26,9 @@ interface Deps {
 export function createTeachService({ approvals, conversations, llm, policy, logger }: Deps) {
   return {
     async prepare({ sessionId, message, language }: MessageRequest): Promise<TextStreamPlan> {
-      const pending = (await approvals.list()).filter((a) => a.status === 'pending_review');
+      const { all, pending } = await loadQueue(approvals);
       const history = await loadHistory({ conversations, logger, sessionId, action: 'teach' });
+      const referenced = referencedInConversation(message, history, all);
       const sources = policy.map((c) => c.id);
       const prompt = TEACH_PROMPT;
 
@@ -34,7 +36,7 @@ export function createTeachService({ approvals, conversations, llm, policy, logg
         sources,
         generate: (signal) =>
           llm.stream({
-            messages: prompt.build({ policy, pending, history, message, language }),
+            messages: prompt.build({ policy, pending, referenced, history, message, language }),
             maxTokens: prompt.maxTokens,
             temperature: prompt.temperature,
             signal,

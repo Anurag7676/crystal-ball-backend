@@ -1,6 +1,14 @@
+import type { Approval } from '../schemas/approval.schema';
 import type { ChatMessage } from '../services/ai/openai.service';
 import type { PolicyChunk } from '../services/rag/policy.service';
-import { ASSISTANT_IDENTITY, DATA_SAFETY_RULES, languageInstruction, type PromptDefinition } from './shared';
+import {
+  ASSISTANT_IDENTITY,
+  DATA_SAFETY_RULES,
+  formatReferencedItems,
+  languageInstruction,
+  METADATA_ONLY_RULE,
+  type PromptDefinition,
+} from './shared';
 
 export interface HelpContext {
   chunks: PolicyChunk[];
@@ -122,4 +130,29 @@ export const HELP_PROMPT_V3: PromptDefinition<HelpContextV2> = {
   },
 };
 
-export const HELP_PROMPT = HELP_PROMPT_V3;
+export interface HelpContextV4 extends HelpContextV2 {
+  /** Approval items the question explicitly names (resolved by the server), metadata only. */
+  referenced: Approval[];
+}
+
+/**
+ * V4: when the question names an approval item, its metadata is included so Help can tailor the
+ * policy answer to it (V3 had no approval data at all and answered "I don't have that item's
+ * details"). Rules and procedures still come only from the policy sections.
+ */
+export const HELP_PROMPT_V4: PromptDefinition<HelpContextV4> = {
+  ...HELP_PROMPT_V3,
+  version: 4,
+  build: ({ referenced, ...ctx }) => {
+    const [system, ...rest] = HELP_PROMPT_V3.build(ctx);
+    const additions = [
+      'Rules and procedures must come only from the policy sections. Approval metadata may be used to say which ' +
+        'rules apply to an item (e.g. its type or submitter), never as a source of rules.',
+      METADATA_ONLY_RULE,
+      formatReferencedItems(referenced),
+    ].filter(Boolean);
+    return [{ role: 'system', content: [system!.content, ...additions].join('\n\n') }, ...rest];
+  },
+};
+
+export const HELP_PROMPT = HELP_PROMPT_V4;

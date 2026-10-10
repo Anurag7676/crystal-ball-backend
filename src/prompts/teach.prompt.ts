@@ -2,7 +2,16 @@ import type { Approval } from '../schemas/approval.schema';
 import type { ChatMessage } from '../services/ai/openai.service';
 import type { PolicyChunk } from '../services/rag/policy.service';
 import { formatPolicyChunks } from './help.prompt';
-import { ASSISTANT_IDENTITY, DATA_SAFETY_RULES, formatQueue, languageInstruction, type PromptDefinition } from './shared';
+import {
+  ASSISTANT_IDENTITY,
+  CONVERSATION_RULE,
+  DATA_SAFETY_RULES,
+  formatQueue,
+  formatReferencedItems,
+  languageInstruction,
+  METADATA_ONLY_RULE,
+  type PromptDefinition,
+} from './shared';
 
 export interface TeachContext {
   policy: PolicyChunk[];
@@ -43,4 +52,29 @@ export const TEACH_PROMPT_V1: PromptDefinition<TeachContext> = {
   ],
 };
 
-export const TEACH_PROMPT = TEACH_PROMPT_V1;
+export interface TeachContextV2 extends TeachContext {
+  /** Approval items the operator's message names (e.g. the item selected in the dashboard). */
+  referenced: Approval[];
+}
+
+/**
+ * V2: V1 plus the selected/named item's metadata, a fresh-lesson rule (a new session must not
+ * open with "here's the lesson again"), and the metadata-only rule (examples use real queue
+ * metadata; file contents are never described).
+ */
+export const TEACH_PROMPT_V2: PromptDefinition<TeachContextV2> = {
+  ...TEACH_PROMPT_V1,
+  version: 2,
+  build: ({ referenced, ...ctx }) => {
+    const [system, ...rest] = TEACH_PROMPT_V1.build(ctx);
+    const additions = [
+      'When you use an item as an example, use its exact id, title, type and submitter from the data.',
+      METADATA_ONLY_RULE,
+      CONVERSATION_RULE,
+      formatReferencedItems(referenced),
+    ].filter(Boolean);
+    return [{ role: 'system', content: [system!.content, ...additions].join('\n\n') }, ...rest];
+  },
+};
+
+export const TEACH_PROMPT = TEACH_PROMPT_V2;

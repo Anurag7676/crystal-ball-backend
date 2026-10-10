@@ -1,4 +1,5 @@
 import { HELP_PROMPT } from '../../prompts/help.prompt';
+import type { ApprovalRepository } from '../../repositories/approval.repository';
 import type { ConversationRepository } from '../../repositories/conversation.repository';
 import type { MessageRequest } from '../../schemas/ai.schema';
 import { helpFallback } from '../../utils/fallback';
@@ -6,6 +7,7 @@ import type { Logger } from '../../utils/logger';
 import type { TextStreamPlan } from '../../utils/streaming';
 import { type PolicyChunk, stripUnverifiedCitations, verifyCitations } from '../rag/policy.service';
 import { retrieve, tokenize } from '../rag/retriever';
+import { loadQueue, referencedInConversation } from './context';
 import { loadHistory, persistTurn } from './conversation';
 import type { ChatMessage, LlmService } from './openai.service';
 
@@ -13,6 +15,7 @@ import type { ChatMessage, LlmService } from './openai.service';
 export const MAX_CONTEXT_CHUNKS = 4;
 
 interface Deps {
+  approvals: ApprovalRepository;
   conversations: ConversationRepository;
   llm: LlmService;
   policy: PolicyChunk[];
@@ -35,7 +38,7 @@ function citedInHistory(history: ChatMessage[], policy: PolicyChunk[]): PolicyCh
  * included chunks. Sections cited earlier in the conversation stay in context so follow-ups
  * can still see (and cite) them. Included chunk ids go to the client up front as `sources`.
  */
-export function createHelpService({ conversations, llm, policy, logger }: Deps) {
+export function createHelpService({ approvals, conversations, llm, policy, logger }: Deps) {
   return {
     async prepare({ sessionId, message, language }: MessageRequest): Promise<TextStreamPlan> {
       const history = await loadHistory({ conversations, logger, sessionId, action: 'help' });
@@ -52,6 +55,8 @@ export function createHelpService({ conversations, llm, policy, logger }: Deps) 
         .filter((c) => !retrievedIds.includes(c.id))
         .slice(0, Math.max(0, MAX_CONTEXT_CHUNKS - retrieved.length));
       const sources = [...retrievedIds, ...carried.map((c) => c.id)];
+      // Approval metadata only when the question (or its antecedent) names an item.
+      const referenced = referencedInConversation(message, history, (await loadQueue(approvals)).all);
       const prompt = HELP_PROMPT;
       const persist = persistTurn({ conversations, logger, sessionId, action: 'help' }, message);
 
@@ -59,7 +64,7 @@ export function createHelpService({ conversations, llm, policy, logger }: Deps) 
         sources,
         generate: (signal) =>
           llm.stream({
-            messages: prompt.build({ index: policy, retrieved, carried, history, message, language }),
+            messages: prompt.build({ index: policy, retrieved, carried, referenced, history, message, language }),
             maxTokens: prompt.maxTokens,
             temperature: prompt.temperature,
             signal,
